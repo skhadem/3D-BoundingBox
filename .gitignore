@@ -1,0 +1,6 @@
+model*
+*.pyc
+*.swp
+Test/data
+models/
+train.py
