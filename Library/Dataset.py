@@ -2,7 +2,6 @@ import os
 import sys
 import cv2
 import glob
-import test
 import numpy as np
 
 
