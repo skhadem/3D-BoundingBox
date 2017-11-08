@@ -6,6 +6,14 @@ This repo is PyTorch implementation for this [paper](https://arxiv.org/abs/1612.
 estimate object pose and dimension. If you are looking for TensorFlow implementation, 
 [here](https://github.com/smallcorgi/3D-Deepbox) is a great repo.
 
+## Dependency
+* [numpy](http://www.numpy.org/)
+* [opencv](https://opencv.org/)
+* [yaml](https://pypi.python.org/pypi/PyYAML)
+* [PyTorch](http://pytorch.org/docs/master/)
+* [torchvision](https://pypi.python.org/pypi/torchvision/0.1.9)
+* [CUDA](https://developer.nvidia.com/cuda-downloads)
+
 ## Usage
 Before using this code, you need download data from 
 [KITTI](http://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=2d) and unzip it. 
