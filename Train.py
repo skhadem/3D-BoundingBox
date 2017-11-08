@@ -3,6 +3,9 @@ import sys
 sys.path.append(os.path.abspath(os.path.dirname(__file__)) + '/Library')
 import cv2
 import yaml
+import time
+import datetime
+
 import Model
 import Dataset
 import numpy as np
@@ -49,13 +52,8 @@ if __name__ == '__main__':
     iter_each_time = round(float(data.num_of_patch) / batches)
     for epoch in range(epochs):
         for i in range(int(iter_each_time)):
-            continue
             batch, confidence, confidence_multi, angleDiff, dimGT = data.Next()
-            #print batch
-            #print confidence
-            #print confidence_multi
-            #exit()
-            #print angleDiff
+
             confidence_arg = np.argmax(confidence, axis = 1)
             batch = Variable(torch.FloatTensor(batch), requires_grad=False).cuda()
             confidence = Variable(torch.LongTensor(confidence.astype(np.int)), requires_grad=False).cuda()
@@ -70,13 +68,26 @@ if __name__ == '__main__':
             dim_loss = dim_LossFunc(dim, dimGT)
             loss_theta = conf_loss + w * orient_loss
             loss = alpha * dim_loss + loss_theta
-            
-            #print orient_loss
-            #opt_SGD.zero_grad()
-            #loss.backward()
-            #opt_SGD.step()
 
-        name = store_path + '/model_%.2d.pkl'%epoch
+            if i % 1000 == 0:
+                c_l = conf_loss.cpu().data.numpy()
+                o_l = orient_loss.cpu().data.numpy()
+                d_l = dim_loss.cpu().data.numpy()
+                t_l = loss.cpu().data.numpy()
+                now = datetime.datetime.now()
+                now_s = now.strftime('%Y-%m-%d-%H-%M-%S')
+                print '------- %s Epoch %.2d -------'%(now_s, epoch)
+                print 'Confidence Loss: %lf'%c_l
+                print 'Orientation Loss: %lf'%o_l
+                print 'Dimension Loss: %lf'%d_l
+                print 'Total Loss: %lf'%t_l
+                print '-----------------------------'
+            opt_SGD.zero_grad()
+            loss.backward()
+            opt_SGD.step()
+        now = datetime.datetime.now()
+        now_s = now.strftime('%Y-%m-%d-%H-%M-%S')
+        name = store_path + '/model_%s.pkl'%now_s
         torch.save(model.state_dict(), name)
 
 
