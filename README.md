@@ -8,7 +8,7 @@ estimate object pose and dimension.
 ## Usage
 Before using this code, you need download data from 
 [KITTI](http://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=2d) and unzip it. 
-After that, you need to add the kitti path of dataset to *config.yaml*.
+After that, you need to add the kitti path of dataset to **config.yaml**.
 ```yaml
 kitti_path: somewhere # Root of kitti, where contrain trainning/ and testing/   
 ```
@@ -20,11 +20,17 @@ w: 0.8
 alpha: 0.8
 batches: 8             
 ```
-After setting up, just type
+After setting up, just type it for training
 ```cmd
 python Train.py
 ```
-It will store model in ./models
+It will store model in ./models. For simple evaluation, type
+```cmd
+python Eval.py
+```
+This will calculate average orientation and dimension error (in degree and meters).
 
-
-......To be continued......
+## Reference
+* [3D Bounding Box Estimation Using Deep Learning and Geometry](https://arxiv.org/abs/1612.00496)
+* [PyTorch](http://pytorch.org/docs/master/)
+* [KITTI](http://www.cvlibs.net/datasets/kitti)
