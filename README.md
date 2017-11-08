@@ -1,7 +1,7 @@
 # 3D Bounding Box Estimation Using Deep Learning and Geometry
 
 ## Introduction
-This repo is pytorch implementation for this [paper](https://arxiv.org/abs/1612.00496). In this paper, they collect 
+This repo is PyTorch implementation for this [paper](https://arxiv.org/abs/1612.00496). In this paper, they collect 
 [KITTI 2D Object Dataset](http://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=2d) and introduce a flow to
 estimate object pose and dimension.
 
