@@ -25,3 +25,6 @@ After setting up, just type
 python Train.py
 ```
 It will store model in ./models
+
+
+......To be continued......
