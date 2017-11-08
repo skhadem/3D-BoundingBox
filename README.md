@@ -3,7 +3,8 @@
 ## Introduction
 This repo is PyTorch implementation for this [paper](https://arxiv.org/abs/1612.00496). In this paper, they collect 
 [KITTI 2D Object Dataset](http://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=2d) and introduce a flow to
-estimate object pose and dimension.
+estimate object pose and dimension. If you are looking for TensorFlow implementation, 
+[here](https://github.com/smallcorgi/3D-Deepbox) is a great repo.
 
 ## Usage
 Before using this code, you need download data from 
