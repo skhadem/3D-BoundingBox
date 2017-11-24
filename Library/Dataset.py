@@ -155,7 +155,7 @@ class BatchDataset:
             pt1 = data['Box_2D'][0]
             pt2 = data['Box_2D'][1]
             crop = img[pt1[1]:pt2[1]+1, pt1[0]:pt2[0]+1]
-            crop = cv2.resize(crop, (224, 224), cv2.INTER_CUBIC)
+            crop = cv2.resize(src=crop, dsize=(224, 224), interpolation=cv2.INTER_CUBIC)
             batch[one, 0, :, :] = crop[:, :, 2]
             batch[one, 1, :, :] = crop[:, :, 1]
             batch[one, 2, :, :] = crop[:, :, 0]
@@ -187,7 +187,7 @@ class BatchDataset:
         pt1 = info['Box_2D'][0]
         pt2 = info['Box_2D'][1]
         crop = self.img[pt1[1]:pt2[1]+1, pt1[0]:pt2[0]+1]
-        crop = cv2.resize(crop, (224, 224), cv2.INTER_CUBIC)
+        crop = cv2.resize(src = crop, dsize=(224, 224), interpolation=cv2.INTER_CUBIC)
         batch[0, 0, :, :] = crop[:, :, 2]
         batch[0, 1, :, :] = crop[:, :, 1]
         batch[0, 2, :, :] = crop[:, :, 0]
