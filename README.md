@@ -1,9 +1,11 @@
+The original repo did not do things well so I am working on improving evaluation and batch data classes.
+Run.py will be working evaluation script eventually.
 # 3D Bounding Box Estimation Using Deep Learning and Geometry
 
 ## Introduction
-This repo is PyTorch implementation for this [paper](https://arxiv.org/abs/1612.00496). In this paper, they collect 
+This repo is PyTorch implementation for this [paper](https://arxiv.org/abs/1612.00496). In this paper, they collect
 [KITTI 2D Object Dataset](http://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=2d) and introduce a flow to
-estimate object pose and dimension. If you are looking for TensorFlow implementation, 
+estimate object pose and dimension. If you are looking for TensorFlow implementation,
 [here](https://github.com/smallcorgi/3D-Deepbox) is a great repo.
 
 ## Dependency
@@ -15,13 +17,13 @@ estimate object pose and dimension. If you are looking for TensorFlow implementa
 * [CUDA](https://developer.nvidia.com/cuda-downloads)
 
 ## Usage
-Before using this code, you need download data from 
-[KITTI](http://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=2d) and unzip it. 
+Before using this code, you need download data from
+[KITTI](http://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=2d) and unzip it.
 After that, you need to add the kitti path of dataset to **config.yaml**.
 ```yaml
 kitti_path: somewhere # Root of kitti, where contrain trainning/ and testing/   
 ```
-Also, you can set up parameters for training and weight of loss as describded in paper.
+Also, you can set up parameters for training and weight of loss as described in paper.
 ```yaml
 epochs: 8 # How many epoch for training?
 bins: 2  # How many bins you want to split?
