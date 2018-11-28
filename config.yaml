@@ -1,4 +1,4 @@
-kitti_path: ../Kitti/
+kitti_path: /home/soroush/git/3D-BoundingBox/Kitti/
 epochs: 8
 bins: 2
 w: 1
