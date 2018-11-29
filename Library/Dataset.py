@@ -208,6 +208,17 @@ class BatchDataset:
 
 
 
+"""
+Dataset to hold images
+
+As is:
+
+?'s:
+
+Goals:
+
+
+"""
 
 class MyImageDataset:
     def __init__(self, path):
@@ -271,12 +282,35 @@ class MyImageDataset:
         img[:, :, 2] = (img[:, :, 2] - 0.485) / 0.229
         return img
 
+    def GetRawImage(self, idx):
+        name = '%s/%s.png'%(self.img_path, self.IDLst[idx])
+        img = cv2.imread(name)
+        return img
+
+
     def __len__(self):
         return len(self.IDLst)
 
+"""
+Main dataset
 
+As is:
+    - My guess is this is just a way to store the data that will be passed
+    thru the net, to train as well as evaluate
 
+    - pass in the image dataset, which contains the labels and the images
+    - pass in a couple of other values (still figuring out)
+        - do these values need to be the same as what was trained with?
+    - switch mode from 'train' or 'eval'
+    - The data is held as a long list of dicts, each one has many things
+    including class, the img id, 2D box coords, etc.
 
+Goals:
+    - make variables more clear as to what they are, no hard coding values
+    (see num_of_patch lol)
+    - change up the data structure, want to have dict for image id, with arrays
+    of labels inside. Should make for more intuitave looping on the other end.
+"""
 class MyBatchDataset:
     def __init__(self, imgDataset, batchSize = 1, bins = 3, overlap = 25/180.0 * np.pi, mode='train'):
         self.imgDataset = imgDataset
@@ -292,17 +326,18 @@ class MyBatchDataset:
         self.centerAngle = centerAngle
         #print centerAngle / np.pi * 180
         self.intervalAngle = interval
-        self.info = self.getBatchInfo()
+        self.info = self.getBatchInfo() # the main long list that refs the image
         self.Total = len(self.info)
         if mode == 'train':
             self.idx = 0
-            self.num_of_patch = 35570
+            self.num_of_patch = 35570 # wtf?
         else:
-            # wtf are these ?????
             self.idx = 0
-            self.num_of_patch = 5000
+            self.num_of_patch = 5000 # wtf?
         #print len(self.info)
         #print self.info
+        self.getInfo()
+
     def getBatchInfo(self):
         #
         # get info of all crop image
@@ -316,7 +351,7 @@ class MyBatchDataset:
             #img = one['Image']
             allLabel = one['Label']
             for label in allLabel:
-                if label['Class'] != 'DontCare':
+                if label['Class'] != 'DontCare': # lol
                     #crop = img[pt1[1]:pt2[1]+1, pt1[0]:pt2[0]+1]
                     LocalAngle = label['LocalAngle']
                     confidence = np.zeros(self.bins)
@@ -345,6 +380,20 @@ class MyBatchDataset:
                             })
         return data
 
+
+    def getInfo(self):
+        data = {}
+        for img_label in self.imgDataset:
+            print(img_label)
+            # img_id = img_label['ID']
+
+            # try:
+            #     data[img_id].append
+
+    """
+    Is this a pytorch necessary thing?
+    EvalBatch seems to do the same thing
+    """
     def Next(self):
         batch = np.zeros([self.batchSize, 3, 224, 224], np.float)
         confidence = np.zeros([self.batchSize, self.bins], np.float)
@@ -387,12 +436,26 @@ class MyBatchDataset:
                     self.idx = 35570
         return batch, confidence, confidence_multi, angleDiff, dim
 
+    """
+    As is:
+        - steps through the data set of labels containing 2D BB
+        - grabs corresponding image and crops to the box then resizes
+        - returns the the image (batch) and the label associated with it
+
+    ?'s:
+        - is centerAngle the known angle of the camera (using imu, etc.)
+
+    Goals:
+        - pass in an image id and have this function find all labels for that
+        image (i.e. all the boxes in it) then return array of cropped portions
+        of the image to pass through the net
+    """
     def EvalBatch(self):
-        print(len(self.info))
+        # print(len(self.info))
         batch = np.zeros([1, 3, 224, 224], np.float)
         info = self.info[self.idx]
         imgID = info['Index']
-        if imgID != self.imgID:
+        if imgID != self.imgID: # check to see if a new image is needed
             self.img = self.imgDataset.GetImage(imgID)
             self.imgID = imgID
         pt1 = info['Box_2D'][0]
@@ -403,14 +466,56 @@ class MyBatchDataset:
         batch[0, 1, :, :] = crop[:, :, 1]
         batch[0, 2, :, :] = crop[:, :, 0]
 
+        # looping
         if self.mode == 'train':
             if self.idx + 1 < self.num_of_patch:
                 self.idx += 1
             else:
                 self.idx = 0
+        # step through, knowledge of total number of labels should be known
+        # this should go through number of images instead
         else:
             if self.idx + 1 < self.Total:
                 self.idx += 1
             else:
                 self.idx = 35570
+
+        # eventually these should be arrays
+        # for now, info and centerAngle (??) are okay
+        # Eventually should really just be batch and 2D box
+        return batch, self.centerAngle, info
+
+
+    def formatForModel(self, img_idx):
+        batch = np.zeros([1, 3, 224, 224], np.float)
+        info = self.info[self.idx]
+        imgID = info['Index']
+        if imgID != self.imgID: # check to see if a new image is needed
+            self.img = self.imgDataset.GetImage(imgID)
+            self.imgID = imgID
+        pt1 = info['Box_2D'][0]
+        pt2 = info['Box_2D'][1]
+        crop = self.img[pt1[1]:pt2[1]+1, pt1[0]:pt2[0]+1]
+        crop = cv2.resize(src = crop, dsize=(224, 224), interpolation=cv2.INTER_CUBIC)
+        batch[0, 0, :, :] = crop[:, :, 2]
+        batch[0, 1, :, :] = crop[:, :, 1]
+        batch[0, 2, :, :] = crop[:, :, 0]
+
+        # looping
+        if self.mode == 'train':
+            if self.idx + 1 < self.num_of_patch:
+                self.idx += 1
+            else:
+                self.idx = 0
+        # step through, knowledge of total number of labels should be known
+        # this should go through number of images instead
+        else:
+            if self.idx + 1 < self.Total:
+                self.idx += 1
+            else:
+                self.idx = 35570
+
+        # eventually these should be arrays
+        # for now, info and centerAngle (??) are okay
+        # Eventually should really just be batch and 2D box
         return batch, self.centerAngle, info
