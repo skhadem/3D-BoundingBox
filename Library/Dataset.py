@@ -275,7 +275,10 @@ class MyImageDataset:
         tmp['Label'] = buf
         return tmp
     def GetImage(self, idx):
-        name = '%s/%s.png'%(self.img_path, self.IDLst[idx])
+        if type(idx) == str:
+            name = '%s/%s.png'%(self.img_path, idx)
+        else:
+            name = '%s/%s.png'%(self.img_path, self.IDLst[idx])
         img = cv2.imread(name, cv2.IMREAD_COLOR).astype(np.float) / 255
         img[:, :, 0] = (img[:, :, 0] - 0.406) / 0.225
         img[:, :, 1] = (img[:, :, 1] - 0.456) / 0.224
@@ -313,20 +316,25 @@ Goals:
 """
 class MyBatchDataset:
     def __init__(self, imgDataset, batchSize = 1, bins = 3, overlap = 25/180.0 * np.pi, mode='train'):
+        # --------- old stuff -----------
         self.imgDataset = imgDataset
         self.batchSize = batchSize
         self.bins = bins
         self.overlap = overlap
         self.mode = mode
         self.imgID = None
+
+        # what is happening here
         centerAngle = np.zeros(bins)
         interval = 2 * np.pi / bins
         for i in range(1, bins):
             centerAngle[i] = i * interval
         self.centerAngle = centerAngle
+
         #print centerAngle / np.pi * 180
         self.intervalAngle = interval
         self.info = self.getBatchInfo() # the main long list that refs the image
+        print(self.info)
         self.Total = len(self.info)
         if mode == 'train':
             self.idx = 0
@@ -334,10 +342,22 @@ class MyBatchDataset:
         else:
             self.idx = 0
             self.num_of_patch = 5000 # wtf?
-        #print len(self.info)
-        #print self.info
-        self.getInfo()
 
+        # ----------- my stuff ------------
+        self.labels = self.getInfo()
+        self.num_images = len(self.labels)
+
+
+
+
+
+
+
+
+    """
+    Organizes the labels of the images into a single array, saves the image id
+    so that they can be grouped together. I don't understand why this is in an array
+    """
     def getBatchInfo(self):
         #
         # get info of all crop image
@@ -380,63 +400,21 @@ class MyBatchDataset:
                             })
         return data
 
-
+    """
+    My version, will keep the kitti format
+    """
     def getInfo(self):
-        data = {}
-        for img_label in self.imgDataset:
-            print(img_label)
-            # img_id = img_label['ID']
+        labels = []
+        for label in self.imgDataset:
+            labels.append(label) # keep kitti format
 
-            # try:
-            #     data[img_id].append
+        return labels
 
-    """
-    Is this a pytorch necessary thing?
-    EvalBatch seems to do the same thing
-    """
-    def Next(self):
-        batch = np.zeros([self.batchSize, 3, 224, 224], np.float)
-        confidence = np.zeros([self.batchSize, self.bins], np.float)
-        confidence_multi = np.zeros([self.batchSize, self.bins], np.float)
-        ntheta = np.zeros(self.batchSize, np.float)
-        angleDiff = np.zeros([self.batchSize, self.bins], np.float)
-        dim = np.zeros([self.batchSize, 3], np.float)
-        record = None
-        for one in range(self.batchSize):
-            data = self.info[self.idx]
-            imgID = data['Index']
-            if imgID != record:
-                img = self.imgDataset.GetImage(imgID)
-                #img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                #cv2.namedWindow('GG')
-                #cv2.imshow('GG', img)
-                #cv2.waitKey(0)
-            pt1 = data['Box_2D'][0]
-            pt2 = data['Box_2D'][1]
-            crop = img[pt1[1]:pt2[1]+1, pt1[0]:pt2[0]+1]
-            crop = cv2.resize(src=crop, dsize=(224, 224), interpolation=cv2.INTER_CUBIC)
-            batch[one, 0, :, :] = crop[:, :, 2]
-            batch[one, 1, :, :] = crop[:, :, 1]
-            batch[one, 2, :, :] = crop[:, :, 0]
-            confidence[one, :] = data['Confidence'][:]
-            confidence_multi[one, :] = data['ConfidenceMulti'][:]
-            #confidence[one, :] /= np.sum(confidence[one, :])
-            ntheta[one] = data['Ntheta']
-            angleDiff[one, :] = data['LocalAngle'] - self.centerAngle
-            dim[one, :] = data['Dimension']
-            if self.mode == 'train':
-                if self.idx + 1 < self.num_of_patch:
-                    self.idx += 1
-                else:
-                    self.idx = 0
-            else:
-                if self.idx + 1 < self.Total:
-                    self.idx += 1
-                else:
-                    self.idx = 35570
-        return batch, confidence, confidence_multi, angleDiff, dim
+
+
 
     """
+    Old version
     As is:
         - steps through the data set of labels containing 2D BB
         - grabs corresponding image and crops to the box then resizes
@@ -486,36 +464,101 @@ class MyBatchDataset:
         return batch, self.centerAngle, info
 
 
+    """
+    My version, will loop inside of this and return array of batch
+    """
     def formatForModel(self, img_idx):
         batch = np.zeros([1, 3, 224, 224], np.float)
-        info = self.info[self.idx]
-        imgID = info['Index']
-        if imgID != self.imgID: # check to see if a new image is needed
-            self.img = self.imgDataset.GetImage(imgID)
-            self.imgID = imgID
-        pt1 = info['Box_2D'][0]
-        pt2 = info['Box_2D'][1]
-        crop = self.img[pt1[1]:pt2[1]+1, pt1[0]:pt2[0]+1]
-        crop = cv2.resize(src = crop, dsize=(224, 224), interpolation=cv2.INTER_CUBIC)
-        batch[0, 0, :, :] = crop[:, :, 2]
-        batch[0, 1, :, :] = crop[:, :, 1]
-        batch[0, 2, :, :] = crop[:, :, 0]
+        # get the label from the array of all labels
+        info = self.labels[img_idx]
 
-        # looping
-        if self.mode == 'train':
-            if self.idx + 1 < self.num_of_patch:
-                self.idx += 1
-            else:
-                self.idx = 0
-        # step through, knowledge of total number of labels should be known
-        # this should go through number of images instead
-        else:
-            if self.idx + 1 < self.Total:
-                self.idx += 1
-            else:
-                self.idx = 35570
+        # get the image
+        imgID = info['ID']
+        img = self.imgDataset.GetImage(imgID)
 
-        # eventually these should be arrays
-        # for now, info and centerAngle (??) are okay
-        # Eventually should really just be batch and 2D box
-        return batch, self.centerAngle, info
+        # loop through all objects in img and add cropped imaged to array to return
+        batches = []
+        centerAngles = []
+        infos = []
+
+
+        for obj in info['Label']:
+            # crop image
+            pt1 = obj['Box_2D'][0]
+            pt2 = obj['Box_2D'][1]
+            crop = img[pt1[1]:pt2[1]+1, pt1[0]:pt2[0]+1]
+            crop = cv2.resize(src = crop, dsize=(224, 224), interpolation=cv2.INTER_CUBIC)
+
+            # recolor, reformat
+            batch[0, 0, :, :] = crop[:, :, 2]
+            batch[0, 1, :, :] = crop[:, :, 1]
+            batch[0, 2, :, :] = crop[:, :, 0]
+
+            batches.append(batch)
+            centerAngles.append(self.centerAngle)
+            infos.append(obj)
+
+        # TODO: will need different method to implement for training
+
+        # # looping
+        # if self.mode == 'train':
+        #     if self.idx + 1 < self.num_of_patch:
+        #         self.idx += 1
+        #     else:
+        #         self.idx = 0
+        # # step through, knowledge of total number of labels should be known
+        # # this should go through number of images instead
+        # else:
+        #     if self.idx + 1 < self.Total:
+        #         self.idx += 1
+        #     else:
+        #         self.idx = 35570
+
+        return batches, centerAngles, infos
+
+
+        """
+        Is this a pytorch necessary thing?
+        EvalBatch seems to do the same thing
+        """
+        def Next(self):
+            batch = np.zeros([self.batchSize, 3, 224, 224], np.float)
+            confidence = np.zeros([self.batchSize, self.bins], np.float)
+            confidence_multi = np.zeros([self.batchSize, self.bins], np.float)
+            ntheta = np.zeros(self.batchSize, np.float)
+            angleDiff = np.zeros([self.batchSize, self.bins], np.float)
+            dim = np.zeros([self.batchSize, 3], np.float)
+            record = None
+            for one in range(self.batchSize):
+                data = self.info[self.idx]
+                imgID = data['Index']
+                if imgID != record:
+                    img = self.imgDataset.GetImage(imgID)
+                    #img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    #cv2.namedWindow('GG')
+                    #cv2.imshow('GG', img)
+                    #cv2.waitKey(0)
+                pt1 = data['Box_2D'][0]
+                pt2 = data['Box_2D'][1]
+                crop = img[pt1[1]:pt2[1]+1, pt1[0]:pt2[0]+1]
+                crop = cv2.resize(src=crop, dsize=(224, 224), interpolation=cv2.INTER_CUBIC)
+                batch[one, 0, :, :] = crop[:, :, 2]
+                batch[one, 1, :, :] = crop[:, :, 1]
+                batch[one, 2, :, :] = crop[:, :, 0]
+                confidence[one, :] = data['Confidence'][:]
+                confidence_multi[one, :] = data['ConfidenceMulti'][:]
+                #confidence[one, :] /= np.sum(confidence[one, :])
+                ntheta[one] = data['Ntheta']
+                angleDiff[one, :] = data['LocalAngle'] - self.centerAngle
+                dim[one, :] = data['Dimension']
+                if self.mode == 'train':
+                    if self.idx + 1 < self.num_of_patch:
+                        self.idx += 1
+                    else:
+                        self.idx = 0
+                else:
+                    if self.idx + 1 < self.Total:
+                        self.idx += 1
+                    else:
+                        self.idx = 35570
+            return batch, confidence, confidence_multi, angleDiff, dim

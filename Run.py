@@ -248,52 +248,47 @@ def main():
     # for error
     # angle_error = []
     # dimension_error = []
+
     # for i in range(data.num_of_patch):
-    img = img_data.GetRawImage(0)
-    for i in range(0,9): # through the labels for a single img
-        batch, centerAngle, info = data.EvalBatch() # this should be called for each item in an image
-        dimGT = info['Dimension']
+    # angle = info['LocalAngle'] / np.pi * 180
+    # Ry = info['Ry'] # ????
+    
+    for img_idx in range(0,data.num_images): # through the images
+        # get the raw image, for visualization purposes
+        img = img_data.GetRawImage(img_idx)
 
-        # angle = info['LocalAngle'] / np.pi * 180
+        # batches is the all objects in image, cropped
+        batches, centerAngles, infos = data.formatForModel(img_idx)
 
-        Ry = info['Ry'] # ????
+        for i, batch in enumerate(batches):
+            info = infos[i]
 
-        batch = Variable(torch.FloatTensor(batch), requires_grad=False).cuda()
+            # create tensor
+            batch = Variable(torch.FloatTensor(batch), requires_grad=False).cuda()
 
-        # run through the net here
-        [orient, conf, dim] = model(batch)
-        orient = orient.cpu().data.numpy()[0, :, :]
-        conf = conf.cpu().data.numpy()[0, :]
-        dim = dim.cpu().data.numpy()[0, :]
+            # run through the net, format output
+            [orient, conf, dim] = model(batch)
+            orient = orient.cpu().data.numpy()[0, :, :]
+            conf = conf.cpu().data.numpy()[0, :]
+            dim = dim.cpu().data.numpy()[0, :]
 
-        # wtf is this ????
-        argmax = np.argmax(conf)
-        orient_max = orient[argmax, :]
-        cos = orient_max[0]
-        sin = orient_max[1]
-        theta = np.arctan2(sin, cos) / np.pi * 180
+            # wtf is this for????
+            argmax = np.argmax(conf)
+            orient_max = orient[argmax, :]
+            cos = orient_max[0]
+            sin = orient_max[1]
+            theta = np.arctan2(sin, cos) / np.pi * 180
 
-        # print info
+            # format to pass into *math* functions and visualize
+            net_output = {}
+            net_output['Orientation'] = orient
+            net_output['Dimension'] = dim
+            net_output['ThetaRay'] = theta
+            net_output['Box_2D'] = info['Box_2D'] # from label, will eventually be from yolo
 
-        #
-        # print orient
-        # print dim
-        # print theta
-
-
-
-        net_output = {}
-        net_output['Orientation'] = orient
-        net_output['Dimension'] = dim
-        net_output['ThetaRay'] = theta
-
-        net_output['Box_2D'] = info['Box_2D'] # from label, will eventually be from yolo
-
-
-
-        # project 3d into 2d to visualize
-        # img = img_data.GetImage(0)
-        img = plot_3d_bbox(img, net_output, calib_file)
+            # project 3d into 2d to visualize
+            # img = img_data.GetImage(0)
+            img = plot_3d_bbox(img, net_output, calib_file)
 
 
     cv2.imshow('Net output', img)
