@@ -1,0 +1,50 @@
+KITTI version:
+
+{
+    'ID': '000010',
+    'Label': [
+        {'Box_2D': [(1013, 182), (1241, 374)], 'LocalAngle': 0.55481312374513403, 'Location': [4.43, 1.65, 5.2], 'ThetaRay': 49.571556499511232, 'Alpha': -119.74817918234204, 'Ry': -81.36000690857689, 'Class': 'Car', 'Dimension': [1.57, 1.65, 3.35]},
+        {'Box_2D': [(354, 186), (550, 294)], 'LocalAngle': 2.752550030707603, 'Location': [-2.39, 1.66, 11.8], 'ThetaRay': 101.44992839882433, 'Alpha': 111.72677005051052, 'Ry': 100.8405719430249, 'Class': 'Car', 'Dimension': [1.43, 1.7, 3.95]},
+        {'Box_2D': [(860, 160), (880, 221)], 'LocalAngle': 3.3029047678081667, 'Location': [8.33, 1.55, 23.51], 'ThetaRay': 70.489882523060842, 'Alpha': 80.78704911344607, 'Ry': 100.26761414789408, 'Class': 'Pedestrian', 'Dimension': [1.96, 0.72, 1.09]},
+        {'Box_2D': [(820, 178), (927, 252)], 'LocalAngle': 0.20992214220617186, 'Location': [5.85, 1.64, 16.5], 'ThetaRay': 70.478269724079794, 'Alpha': -101.98648753328652, 'Ry': -82.50592249883854, 'Class': 'Car', 'Dimension': [1.51, 1.6, 3.24]},
+        {'Box_2D': [(801, 178), (879, 231)], 'LocalAngle': 0.12123615898914449, 'Location': [6.87, 1.62, 22.05], 'ThetaRay': 72.694813288729435, 'Alpha': -96.82986737710912, 'Ry': -79.64113352318442, 'Class': 'Car', 'Dimension': [1.45, 1.74, 4.1]},
+        {'Box_2D': [(559, 179), (635, 231)], 'LocalAngle': 2.916315914566864, 'Location': [-0.38, 1.76, 23.64], 'ThetaRay': 90.920918835197384, 'Alpha': 103.13240312354819, 'Ry': 101.98648753328652, 'Class': 'Car', 'Dimension': [1.54, 1.68, 3.79]},
+        {'Box_2D': [(598, 179), (652, 218)], 'LocalAngle': 2.9444012482945809, 'Location': [0.64, 1.74, 29.07], 'ThetaRay': 88.73878995125196, 'Alpha': 101.41352973815572, 'Ry': 102.55944532841737, 'Class': 'Car', 'Dimension': [1.49, 1.52, 3.35]},
+        {'Box_2D': [(785, 178), (840, 220)], 'LocalAngle': 0.098685627857550778, 'Location': [7.88, 1.75, 28.53], 'ThetaRay': 74.559821343478902, 'Alpha': -95.68395178684747, 'Ry': -80.21409131831525, 'Class': 'Car', 'Dimension': [1.53, 1.65, 4.37]},
+        {
+            'Box_2D': [(664, 175), (707, 204)],
+            'LocalAngle': 2.7970229500375203,
+            'Location': [4.5, 1.8, 42.85],
+            'ThetaRay': 84.004915145192868,
+            'Alpha': 110.00789666511805,
+            'Ry': 115.7374746164263,
+            'Class': 'Car',
+            'Dimension': [1.64, 1.45, 3.48]
+        }
+    ]
+}
+
+repo version. Is there a reason having this in an array is necessary for pytorch? Definetly for evaluation doesn't make any sense
+imageid gives name of text file, the index gives the location in the image array (??)
+[
+    {'ConfidenceMulti': array([ 1.,  0.]), 'Index': 0, 'Confidence': array([ 1.,  0.]), 'Ry': -81.36000690857689, 'Box_2D': [(1013, 182), (1241, 374)], 'Location': [4.43, 1.65, 5.2], 'ID': '000010', 'Ntheta': 1.0, 'ThetaRay': 49.571556499511232, 'Dimension': [1.57, 1.65, 3.35], 'LocalAngle': 0.55481312374513403},
+    {'ConfidenceMulti': array([ 0.,  1.]), 'Index': 0, 'Confidence': array([ 0.,  1.]), 'Ry': 100.8405719430249, 'Box_2D': [(354, 186), (550, 294)], 'Location': [-2.39, 1.66, 11.8], 'ID': '000010', 'Ntheta': 1.0, 'ThetaRay': 101.44992839882433, 'Dimension': [1.43, 1.7, 3.95], 'LocalAngle': 2.752550030707603},
+    {'ConfidenceMulti': array([ 0.,  1.]), 'Index': 0, 'Confidence': array([ 0.,  1.]), 'Ry': 100.26761414789408, 'Box_2D': [(860, 160), (880, 221)], 'Location': [8.33, 1.55, 23.51], 'ID': '000010', 'Ntheta': 1.0, 'ThetaRay': 70.489882523060842, 'Dimension': [1.96, 0.72, 1.09], 'LocalAngle': 3.3029047678081667},
+    {'ConfidenceMulti': array([ 1.,  0.]), 'Index': 0, 'Confidence': array([ 1.,  0.]), 'Ry': -82.50592249883854, 'Box_2D': [(820, 178), (927, 252)], 'Location': [5.85, 1.64, 16.5], 'ID': '000010', 'Ntheta': 1.0, 'ThetaRay': 70.478269724079794, 'Dimension': [1.51, 1.6, 3.24], 'LocalAngle': 0.20992214220617186},
+    {'ConfidenceMulti': array([ 0.,  1.]), 'Index': 0, 'Confidence': array([ 0.,  1.]), 'Ry': 102.55944532841737, 'Box_2D': [(598, 179), (652, 218)], 'Location': [0.64, 1.74, 29.07], 'ID': '000010', 'Ntheta': 1.0, 'ThetaRay': 88.73878995125196, 'Dimension': [1.49, 1.52, 3.35], 'LocalAngle': 2.9444012482945809},
+    {'ConfidenceMulti': array([ 1.,  0.]), 'Index': 0, 'Confidence': array([ 1.,  0.]), 'Ry': -80.21409131831525, 'Box_2D': [(785, 178), (840, 220)], 'Location': [7.88, 1.75, 28.53], 'ID': '000010', 'Ntheta': 1.0, 'ThetaRay': 74.559821343478902, 'Dimension': [1.53, 1.65, 4.37], 'LocalAngle': 0.098685627857550778},
+    {'ConfidenceMulti': array([ 0.,  1.]), 'Index': 0, 'Confidence': array([ 0.,  1.]), 'Ry': 115.7374746164263, 'Box_2D': [(664, 175), (707, 204)], 'Location': [4.5, 1.8, 42.85], 'ID': '000010', 'Ntheta': 1.0, 'ThetaRay': 84.004915145192868, 'Dimension': [1.64, 1.45, 3.48], 'LocalAngle': 2.7970229500375203},
+    {'ConfidenceMulti': array([ 1.,  0.]), 'Index': 0, 'Confidence': array([ 1.,  0.]), 'Ry': -79.64113352318442, 'Box_2D': [(801, 178), (879, 231)], 'Location': [6.87, 1.62, 22.05], 'ID': '000010', 'Ntheta': 1.0, 'ThetaRay': 72.694813288729435, 'Dimension': [1.45, 1.74, 4.1], 'LocalAngle': 0.12123615898914449},
+    {
+        'ConfidenceMulti': array([ 0.,  1.]),
+        'Index': 0,
+        'Confidence': array([ 0.,  1.]),
+        'Ry': 101.98648753328652, 'Box_2D': [(559, 179), (635, 231)],
+        'Location': [-0.38, 1.76, 23.64],
+        'ID': '000010',
+        'Ntheta': 1.0,
+        'ThetaRay': 90.920918835197384,
+        'Dimension': [1.54, 1.68, 3.79],
+        'LocalAngle': 2.916315914566864
+    }
+ ]
