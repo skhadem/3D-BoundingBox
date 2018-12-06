@@ -30,6 +30,8 @@ import torch.nn as nn
 from torch.autograd import Variable
 from torchvision.models import vgg
 
+from math import sin, cos
+
 class cv_colors(Enum):
     RED = (0,0,255)
     GREEN = (0,255,0)
@@ -45,6 +47,7 @@ def get_calibration_cam_to_image(cab_f):
             return cam_to_img
 
 # from the 2 corners, return the 4 corners of a box in CCW order
+# coulda just used cv2.rectangle haha
 def create_2d_box(box_2d):
     corner1_2d = box_2d[0]
     corner2_2d = box_2d[1]
@@ -57,11 +60,30 @@ def create_2d_box(box_2d):
     return pt1, pt2, pt3, pt4
 
 
-# this should be based on the paper
-# orientation is a quaternion, dimension is a 1x3 vector
-# calib is a 3x4 matrix, box_2d is [[x, y], ... (x4) ]
+# need to double check the coordinate system used, I believe it is Velodyne
+# using this math: https://en.wikipedia.org/wiki/Rotation_matrix
+def rotation_matrix(yaw, pitch=0, roll=0):
+   tx = roll
+   ty = pitch
+   tz = yaw
+
+   Rx = np.array([[1,0,0], [0, cos(tx), -sin(tx)], [0, sin(tx), cos(tx)]])
+   Ry = np.array([[cos(ty), 0, -sin(ty)], [0, 1, 0], [sin(ty), 0, cos(ty)]])
+   Rz = np.array([[cos(tz), -sin(tz), 0], [sin(tz), cos(tz), 0], [0,0,1]])
+
+   return np.dot(Rz, np.dot(Ry, Rx))
+
+
+# this should be based on the paper. Math!
+# orientation is car's local yaw angle ?, dimension is a 1x3 vector
+# calib is a 3x4 matrix, box_2d is [[x, y], ... (x4)]
 def calc_location(orient, dimension, calib, box_2d):
-    pass
+    # variables just like the equation
+    K = calib
+    # R = rotation_matrix(orient)
+
+
+
 
 def plot_3d_bbox(img, net_output, calib_file):
     cam_to_img = get_calibration_cam_to_image(calib_file)
@@ -92,10 +114,9 @@ def plot_3d_bbox(img, net_output, calib_file):
 
     box_3d = []
 
-    # calib = label_info['Calib']
-    # cam_to_img = calib['P2']
+
     rot_y = alpha / 180 * np.pi  + np.arctan(center[0]/center[2])
-    # import pdb; pdb.set_trace()
+
 
     for i in [1,-1]:
         for j in [1,-1]:
@@ -131,12 +152,15 @@ def plot_3d_bbox(img, net_output, calib_file):
     return img
 
 
+# From KITTI : x = P2 * R0_rect * Tr_velo_to_cam * y
+# Velodyne coords
 def plot_truth_3d_bbox(img, label_info, calib_file):
     cam_to_img = get_calibration_cam_to_image(calib_file)
 
-    alpha = label_info['ThetaRay'] # is this camera orient?
-    # theta_ray = label_info['theta_ray']
 
+    # seems to be the car's orientation
+    # I think this is the red angle, which is regressed
+    alpha = label_info['ThetaRay']
 
     dims = label_info['Dimension']
     center = label_info['Location']
@@ -145,11 +169,12 @@ def plot_truth_3d_bbox(img, label_info, calib_file):
 
     box_3d = []
 
-    # calib = label_info['Calib']
-    # cam_to_img = calib['P2']
-    rot_y = alpha / 180 * np.pi  + np.arctan(center[0]/center[2])
-    # import pdb; pdb.set_trace()
 
+    # radians (of the camera angle I think)
+    # this angle is the same for every object in the scene
+    rot_y = alpha / 180 * np.pi  + np.arctan(center[0]/center[2])
+
+    # 3d corners
     for i in [1,-1]:
         for j in [1,-1]:
             for k in [0,1]:
@@ -169,10 +194,18 @@ def plot_truth_3d_bbox(img, label_info, calib_file):
         point_1_ = box_3d[2*i]
         point_2_ = box_3d[2*i+1]
         cv2.line(img, (point_1_[0], point_1_[1]), (point_2_[0], point_2_[1]), cv_colors.GREEN.value, 1)
-        if i == 0 or i == 3:
-            front_mark.append((point_1_[0], point_1_[1]))
-            front_mark.append((point_2_[0], point_2_[1]))
 
+        # get the front of the box
+        if alpha > 90:
+            if i == 0 or i == 3:
+                front_mark.append((point_1_[0], point_1_[1]))
+                front_mark.append((point_2_[0], point_2_[1]))
+        if alpha <= 90:
+            if i == 1 or i == 2:
+                front_mark.append((point_1_[0], point_1_[1]))
+                front_mark.append((point_2_[0], point_2_[1]))
+
+    # x on front of object
     cv2.line(img, front_mark[0], front_mark[-1], cv_colors.BLUE.value, 1)
     cv2.line(img, front_mark[1], front_mark[2], cv_colors.BLUE.value, 1)
 
@@ -242,8 +275,8 @@ def main():
 
 
     truth_img = draw_truth_boxes(0,img_data, calib_file)
-    cv2.imshow('Thruth data for index %s'%0,truth_img)
-    cv2.waitKey(0)
+    # cv2.imshow('Thruth data for index %s'%0,truth_img)
+    # cv2.waitKey(0)
 
     # for error
     # angle_error = []
@@ -252,7 +285,7 @@ def main():
     # for i in range(data.num_of_patch):
     # angle = info['LocalAngle'] / np.pi * 180
     # Ry = info['Ry'] # ????
-    
+
     for img_idx in range(0,data.num_images): # through the images
         # get the raw image, for visualization purposes
         img = img_data.GetRawImage(img_idx)
@@ -278,6 +311,22 @@ def main():
             cos = orient_max[0]
             sin = orient_max[1]
             theta = np.arctan2(sin, cos) / np.pi * 180
+            theta = theta + centerAngles[0][argmax] / np.pi * 180
+            theta = 360 - info['ThetaRay'] - theta
+            if theta > 0: theta -= int(theta / 360) * 360
+            elif theta < 0: theta += (int(-theta / 360) + 1) * 360
+
+
+            # print(orient)
+            # print(orient_max)
+            # print(theta)
+            # print '---'
+            Ry = info['Ry']
+            if Ry > 0: Ry -= int(Ry / 360) * 360
+            elif Ry < 0: Ry += (int(-Ry / 360) + 1) * 360
+            # print(Ry)
+            # exit()
+
 
             # format to pass into *math* functions and visualize
             net_output = {}
@@ -291,8 +340,13 @@ def main():
             img = plot_3d_bbox(img, net_output, calib_file)
 
 
-    cv2.imshow('Net output', img)
+    # cv2.imshow('Net output', img)
+    # cv2.waitKey(0)
+
+    numpy_vertical = np.concatenate((truth_img, img), axis=0)
+    cv2.imshow('Truth on top, Prediction on bottom', numpy_vertical)
     cv2.waitKey(0)
+
 
     exit()
 
