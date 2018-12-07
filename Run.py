@@ -174,62 +174,24 @@ def plot_3d_bbox(img, net_output, calib_file):
     # create a square from the corners
     pt1, pt2, pt3, pt4 = create_2d_box(box_2d)
 
-
     # plot the 2d box
     cv2.line(img, pt1, pt2, cv_colors.BLUE.value, 2)
     cv2.line(img, pt2, pt3, cv_colors.BLUE.value, 2)
     cv2.line(img, pt3, pt4, cv_colors.BLUE.value, 2)
     cv2.line(img, pt4, pt1, cv_colors.BLUE.value, 2)
 
+    return img # for now just 2d boxes
+
+    # below will draw 3d box once the location is found with math (center)
+
+    img = plot_3d(img, cam_to_img, alpha, dims, center)
 
     return img
-
-    # below will be calculated with once the location is found with math (center)
-    box_3d = []
-
-
-    rot_y = alpha / 180 * np.pi  + np.arctan(center[0]/center[2])
-
-
-    for i in [1,-1]:
-        for j in [1,-1]:
-            for k in [0,1]:
-                point = np.copy(center)
-                point[0] = center[0] + i * dims[1]/2 * np.cos(-rot_y+np.pi/2) + (j*i) * dims[2]/2 * np.cos(-rot_y)
-                point[2] = center[2] + i * dims[1]/2 * np.sin(-rot_y+np.pi/2) + (j*i) * dims[2]/2 * np.sin(-rot_y)
-                point[1] = center[1] - k * dims[0]
-
-                point = np.append(point, 1)
-                point = np.dot(cam_to_img, point)
-                point = point[:2]/point[2]
-                point = point.astype(np.int16)
-                box_3d.append(point)
-
-    front_mark = []
-    for i in range(4):
-        point_1_ = box_3d[2*i]
-        point_2_ = box_3d[2*i+1]
-        cv2.line(img, (point_1_[0], point_1_[1]), (point_2_[0], point_2_[1]), cv_colors.GREEN.value, 1)
-        if i == 0 or i == 3:
-            front_mark.append((point_1_[0], point_1_[1]))
-            front_mark.append((point_2_[0], point_2_[1]))
-
-    cv2.line(img, front_mark[0], front_mark[-1], cv_colors.BLUE.value, 1)
-    cv2.line(img, front_mark[1], front_mark[2], cv_colors.BLUE.value, 1)
-
-    for i in range(8):
-        point_1_ = box_3d[i]
-        point_2_ = box_3d[(i+2)%8]
-        cv2.line(img, (point_1_[0], point_1_[1]), (point_2_[0], point_2_[1]), cv_colors.GREEN.value, 1)
-
-    return img
-
 
 # From KITTI : x = P2 * R0_rect * Tr_velo_to_cam * y
 # Velodyne coords
 def plot_truth_3d_bbox(img, label_info, calib_file):
     cam_to_img = get_calibration_cam_to_image(calib_file)
-
 
     # seems to be the car's orientation
     # I think this is the red angle, which is regressed
@@ -238,16 +200,17 @@ def plot_truth_3d_bbox(img, label_info, calib_file):
     dims = label_info['Dimension']
     center = label_info['Location']
 
+    img = plot_3d(img, cam_to_img, alpha, dims, center)
+
+    return img
 
 
-    box_3d = []
-
-
+def plot_3d(img, cam_to_img, alpha, dims, center):
     # radians (of the camera angle I think)
     # this angle is the same for every object in the scene
     rot_y = alpha / 180 * np.pi  + np.arctan(center[0]/center[2])
 
-    # 3d corners
+    box_3d = []
     for i in [1,-1]:
         for j in [1,-1]:
             for k in [0,1]:
@@ -268,7 +231,7 @@ def plot_truth_3d_bbox(img, label_info, calib_file):
         point_2_ = box_3d[2*i+1]
         cv2.line(img, (point_1_[0], point_1_[1]), (point_2_[0], point_2_[1]), cv_colors.GREEN.value, 1)
 
-        # get the front of the box
+         # get the front of the box
         if alpha > 90:
             if i == 0 or i == 3:
                 front_mark.append((point_1_[0], point_1_[1]))
@@ -278,7 +241,6 @@ def plot_truth_3d_bbox(img, label_info, calib_file):
                 front_mark.append((point_1_[0], point_1_[1]))
                 front_mark.append((point_2_[0], point_2_[1]))
 
-    # x on front of object
     cv2.line(img, front_mark[0], front_mark[-1], cv_colors.BLUE.value, 1)
     cv2.line(img, front_mark[1], front_mark[2], cv_colors.BLUE.value, 1)
 
@@ -288,7 +250,6 @@ def plot_truth_3d_bbox(img, label_info, calib_file):
         cv2.line(img, (point_1_[0], point_1_[1]), (point_2_[0], point_2_[1]), cv_colors.GREEN.value, 1)
 
     return img
-
 
 
 def draw_truth_boxes(img_idx, img_dataset, calib_file):
@@ -301,7 +262,6 @@ def draw_truth_boxes(img_idx, img_dataset, calib_file):
         img = plot_truth_3d_bbox(img, item, calib_file)
 
     return img
-
 
 
 def main():
