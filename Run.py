@@ -303,7 +303,7 @@ def main():
 
     # hard code for now, eventually should be based on image id gotten in loop
     image_id = '000010'
-    calib_file = os.path.abspath(os.path.dirname(__file__)) + '/Kitti/eval/calib/%s.txt' % image_id
+    calib_file = os.path.abspath(os.path.dirname(__file__)) + '/eval/calib/%s.txt' % image_id
 
 
 
