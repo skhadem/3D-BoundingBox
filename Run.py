@@ -65,7 +65,10 @@ def create_2d_box(box_2d):
 def rotation_matrix(yaw, pitch=0, roll=0):
    tx = roll
    ty = pitch
-   tz = yaw
+
+   # yaw comes out of the net as a 2x2, seems to be confidence and angle?
+   # get angle of highest confidence, (rad2deg?)
+   tz = yaw[np.argmax(yaw[:,0]), :][1]
 
    Rx = np.array([[1,0,0], [0, cos(tx), -sin(tx)], [0, sin(tx), cos(tx)]])
    Ry = np.array([[cos(ty), 0, -sin(ty)], [0, 1, 0], [sin(ty), 0, cos(ty)]])
@@ -76,14 +79,82 @@ def rotation_matrix(yaw, pitch=0, roll=0):
 
 # this should be based on the paper. Math!
 # orientation is car's local yaw angle ?, dimension is a 1x3 vector
-# calib is a 3x4 matrix, box_2d is [[x, y], ... (x4)]
+# calib is a 3x4 matrix, box_2d is [(xmin, ymin), (xmax, ymax)]
+# Math help: http://ywpkwon.github.io/pdf/bbox3d-study.pdf
 def calc_location(orient, dimension, calib, box_2d):
+
     # variables just like the equation
     K = calib
-    # R = rotation_matrix(orient)
+    R = rotation_matrix(orient)
+    # [xmin, ymin, xmax, ymax]. This can be hard-coded. YOLO, etc. is consistant
+    b = [box_2d[0][0], box_2d[0][1], box_2d[1][0], box_2d[1][1]]
+
+    # check the order on these, Velodyne coord system
+    dx = dimension[0] / 2
+    dy = dimension[2] / 2
+    dz = dimension[1] / 2
 
 
 
+    corners = []
+    # get all the corners
+    # this gives all 8 corners with respect to 0,0,0 being center of box
+
+    for i in [1, -1]:
+        for j in [1,-1]:
+            for k in [1,-1]:
+                corners.append([dx*i, dy*j, dz*k])
+
+    # need to get 64 possibilities for the order (xmin, ymin, xmax, ymax)
+    # TODO:How to do this??
+
+    # this should be 64 long, each possibility has 4 3d points
+    constraints = []
+
+    # create M
+    M = np.zeros([4,4])
+    # 1's down diagonal
+    for i in range(0,4):
+        M[i][i] = 1
+
+
+    indicies = [0,1,0,1]
+
+    best_loc = None
+    best_error = -1e09
+
+    # loop through each possible constraint, hold on to the best guess
+    for constraint in constraints:
+        Ma = np.copy(M)
+        Mb = np.copy(M)
+        Mc = np.copy(M)
+        Md = np.copy(M)
+
+        Xa = constraint[0]
+        Xb = constraint[1]
+        Xc = constraint[2]
+        Xd = constraint[3]
+
+        #TODO: put R*Xa into Ma, ... etc.
+
+
+        #TODO: create the Ax = b, see link above
+
+        A = np.zeros([4,3], dtype=np.float) # reset for every new constraint
+        for row, index in enumerate(indicies):
+            A[row,:] = 0 # TODO: calculate based on M and b[row]
+
+
+        # solve here with least squares, solution in loc, put error in error
+        error = 1e-09
+        loc = None
+
+        if error < best_error:
+            best_loc = loc
+
+
+    # [X,Y,Z] in 3D coords
+    return best_loc
 
 def plot_3d_bbox(img, net_output, calib_file):
     cam_to_img = get_calibration_cam_to_image(calib_file)
@@ -104,14 +175,16 @@ def plot_3d_bbox(img, net_output, calib_file):
     pt1, pt2, pt3, pt4 = create_2d_box(box_2d)
 
 
-    cv2.line(img, pt1, pt2, (255,0,0), 2)
-    cv2.line(img, pt2, pt3, (255,0,0), 2)
-    cv2.line(img, pt3, pt4, (255,0,0), 2)
-    cv2.line(img, pt4, pt1, (255,0,0), 2)
+    # plot the 2d box
+    cv2.line(img, pt1, pt2, cv_colors.BLUE.value, 2)
+    cv2.line(img, pt2, pt3, cv_colors.BLUE.value, 2)
+    cv2.line(img, pt3, pt4, cv_colors.BLUE.value, 2)
+    cv2.line(img, pt4, pt1, cv_colors.BLUE.value, 2)
 
 
     return img
 
+    # below will be calculated with once the location is found with math (center)
     box_3d = []
 
 
