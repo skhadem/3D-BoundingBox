@@ -1,4 +1,4 @@
-The original repo did not do things well so I am working on improving evaluation and batch data classes.
+The original repo did not visualize the 3D prediction so I am working on improving the evaluation and batch data classes to draw out predicted boxes.
 Run.py will be working evaluation script eventually.
 Original README:
 # 3D Bounding Box Estimation Using Deep Learning and Geometry
