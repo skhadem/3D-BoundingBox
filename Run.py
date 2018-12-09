@@ -20,10 +20,12 @@ import yaml
 import time
 import datetime
 from enum import Enum
+import numpy as np
+import itertools
 
 import Model
 import Dataset
-import numpy as np
+
 
 import torch
 import torch.nn as nn
@@ -87,19 +89,23 @@ def calc_location(orient, dimension, calib, box_2d):
     K = calib
     R = rotation_matrix(orient)
     # [xmin, ymin, xmax, ymax]. This can be hard-coded. YOLO, etc. is consistant
-    box_corners = [box_2d[0][0], box_2d[0][1], box_2d[1][0], box_2d[1][1]]
+    # box_corners = [box_2d[0][0], box_2d[0][1], box_2d[1][0], box_2d[1][1]]
 
-    xmin = box_corners[0]
-    ymin = box_corners[1]
-    xmax = box_corners[2]
-    ymax = box_corners[3]
+    xmin = box_2d[0][0]
+    ymin = box_2d[0][1]
+    xmax = box_2d[1][0]
+    ymax = box_2d[1][1]
 
+    box_corners = [xmin, ymin, xmax, ymax]
 
+    # print dimension
+    # return None
 
     # check the order on these, Velodyne coord system
-    dx = dimension[0] / 2
-    dy = dimension[2] / 2
+    dx = dimension[2] / 2
+    dy = dimension[0] / 2
     dz = dimension[1] / 2
+
 
     corners = []
 
@@ -110,11 +116,24 @@ def calc_location(orient, dimension, calib, box_2d):
             for k in [1,-1]:
                 corners.append([dx*i, dy*j, dz*k])
 
+    # print(corners)
+
     # need to get 64 possibilities for the order (xmin, ymin, xmax, ymax)
     # TODO:How to do this??
 
     # this should be 64 long, each possibility has 4 3d points
-    constraints = []
+    # [ [ [3D corner for xmin], [for ymin] ... x4 ], ... x64 ]
+    constraints = [[] for i in range(64)]
+
+
+    constraints = list(itertools.product(corners, repeat=4))
+
+    # from paper:
+    # each vertical side of the 2D detection box can correspond to [+/- dx/2, . , +/- dz/2]
+    # each horizontal side of the 2D detection box can correspond to [., +/- dx , +/- dz/2]
+    # this gives 256, which ones to remove for zero pitch/roll ?
+    # for i in range(0,)
+
 
 
     # create pre M (the term with I and the R*X)
@@ -129,6 +148,7 @@ def calc_location(orient, dimension, calib, box_2d):
     # loop through each possible constraint, hold on to the best guess
     # constraint will be 64 sets of 4 corners
     for constraint in constraints:
+
         # each corner
         Xa = constraint[0]
         Xb = constraint[1]
@@ -141,10 +161,22 @@ def calc_location(orient, dimension, calib, box_2d):
         Mc = np.copy(pre_M)
         Md = np.copy(pre_M)
 
-        #TODO: put R*Xa into Ma ...
 
         indicies = [0,1,0,1]
         X_array = [Xa, Xb, Xc, Xd]
+        # print X_array
+        # return None
+        repeat = False
+        test_x = list(itertools.combinations(X_array, 2))
+
+        for x in test_x:
+            if x[0] == x[1]:
+                repeat = True
+                break
+
+        if repeat:
+            continue
+
         M_array = [Ma, Mb, Mc, Md]
 
         # create A, b
@@ -159,11 +191,16 @@ def calc_location(orient, dimension, calib, box_2d):
 
             M[:3,3] = RX.reshape(3)
 
+            # print(X)
+            # print(M)
+
             A[row, :] = M[index,:3] - box_corners[row] * M[2,:3]
             b[row] = box_corners[row] * M[2,3] - M[0,3]
 
         # solve here with least squares, since over fit will get some error
         loc, error, rank, s = np.linalg.lstsq(A, b)
+        # print(A)
+        # return None
 
         if error < best_error:
             best_loc = loc
@@ -173,7 +210,7 @@ def calc_location(orient, dimension, calib, box_2d):
     # [X,Y,Z] in 3D coords
     return best_loc
 
-def plot_3d_bbox(img, net_output, calib_file):
+def plot_3d_bbox(img, net_output, calib_file, truth_pose):
     cam_to_img = get_calibration_cam_to_image(calib_file)
 
     alpha = net_output['ThetaRay'] # ???? some angle
@@ -185,8 +222,12 @@ def plot_3d_bbox(img, net_output, calib_file):
 
     # center = label_info['Location']
     center = calc_location(orient, dims, cam_to_img, box_2d)
-
-    # print(box_2d)
+    print "Estimated pose:"
+    print center
+    print "--"
+    print "Truth pose:"
+    print truth_pose
+    print "-------------"
 
     # create a square from the corners
     pt1, pt2, pt3, pt4 = create_2d_box(box_2d)
@@ -355,6 +396,7 @@ def main():
             conf = conf.cpu().data.numpy()[0, :]
             dim = dim.cpu().data.numpy()[0, :]
 
+
             # wtf is this for????
             argmax = np.argmax(conf)
             orient_max = orient[argmax, :]
@@ -381,13 +423,25 @@ def main():
             # format to pass into *math* functions and visualize
             net_output = {}
             net_output['Orientation'] = orient
-            net_output['Dimension'] = dim
             net_output['ThetaRay'] = theta
             net_output['Box_2D'] = info['Box_2D'] # from label, will eventually be from yolo
 
+            truth_pose = info['Location']
+
+            truth_dim = info['Dimension']
+
+            net_output['Dimension'] = truth_dim
+
+            # print "====="
+            #
+            # print truth_dim
+            # print dim
+            #
+            # print "====="
+
             # project 3d into 2d to visualize
             # img = img_data.GetImage(0)
-            img = plot_3d_bbox(img, net_output, calib_file)
+            img = plot_3d_bbox(img, net_output, calib_file, truth_pose)
 
 
     # cv2.imshow('Net output', img)

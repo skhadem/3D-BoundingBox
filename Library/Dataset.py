@@ -334,7 +334,7 @@ class MyBatchDataset:
         #print centerAngle / np.pi * 180
         self.intervalAngle = interval
         self.info = self.getBatchInfo() # the main long list that refs the image
-        print(self.info)
+        # print(self.info)
         self.Total = len(self.info)
         if mode == 'train':
             self.idx = 0
@@ -489,11 +489,13 @@ class MyBatchDataset:
             crop = img[pt1[1]:pt2[1]+1, pt1[0]:pt2[0]+1]
             crop = cv2.resize(src = crop, dsize=(224, 224), interpolation=cv2.INTER_CUBIC)
 
+            # cv2.imshow('hello', crop) # to see the input cropped section
+            # cv2.waitKey(0);
+
             # recolor, reformat
             batch[0, 0, :, :] = crop[:, :, 2]
             batch[0, 1, :, :] = crop[:, :, 1]
             batch[0, 2, :, :] = crop[:, :, 0]
-
             batches.append(batch)
             centerAngles.append(self.centerAngle)
             infos.append(obj)
@@ -521,44 +523,49 @@ class MyBatchDataset:
         Is this a pytorch necessary thing?
         EvalBatch seems to do the same thing
         """
-        def Next(self):
-            batch = np.zeros([self.batchSize, 3, 224, 224], np.float)
-            confidence = np.zeros([self.batchSize, self.bins], np.float)
-            confidence_multi = np.zeros([self.batchSize, self.bins], np.float)
-            ntheta = np.zeros(self.batchSize, np.float)
-            angleDiff = np.zeros([self.batchSize, self.bins], np.float)
-            dim = np.zeros([self.batchSize, 3], np.float)
-            record = None
-            for one in range(self.batchSize):
-                data = self.info[self.idx]
-                imgID = data['Index']
-                if imgID != record:
-                    img = self.imgDataset.GetImage(imgID)
-                    #img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                    #cv2.namedWindow('GG')
-                    #cv2.imshow('GG', img)
-                    #cv2.waitKey(0)
-                pt1 = data['Box_2D'][0]
-                pt2 = data['Box_2D'][1]
-                crop = img[pt1[1]:pt2[1]+1, pt1[0]:pt2[0]+1]
-                crop = cv2.resize(src=crop, dsize=(224, 224), interpolation=cv2.INTER_CUBIC)
-                batch[one, 0, :, :] = crop[:, :, 2]
-                batch[one, 1, :, :] = crop[:, :, 1]
-                batch[one, 2, :, :] = crop[:, :, 0]
-                confidence[one, :] = data['Confidence'][:]
-                confidence_multi[one, :] = data['ConfidenceMulti'][:]
-                #confidence[one, :] /= np.sum(confidence[one, :])
-                ntheta[one] = data['Ntheta']
-                angleDiff[one, :] = data['LocalAngle'] - self.centerAngle
-                dim[one, :] = data['Dimension']
-                if self.mode == 'train':
-                    if self.idx + 1 < self.num_of_patch:
-                        self.idx += 1
-                    else:
-                        self.idx = 0
+    def Next(self):
+        batch = np.zeros([self.batchSize, 3, 224, 224], np.float)
+        confidence = np.zeros([self.batchSize, self.bins], np.float)
+        confidence_multi = np.zeros([self.batchSize, self.bins], np.float)
+        ntheta = np.zeros(self.batchSize, np.float)
+        angleDiff = np.zeros([self.batchSize, self.bins], np.float)
+        dim = np.zeros([self.batchSize, 3], np.float)
+        record = None
+        for one in range(self.batchSize):
+            data = self.info[self.idx]
+            imgID = data['Index']
+            if imgID != record:
+                img = self.imgDataset.GetImage(imgID)
+                #img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                #cv2.namedWindow('GG')
+                #cv2.imshow('GG', img)
+                #cv2.waitKey(0)
+            pt1 = data['Box_2D'][0]
+            pt2 = data['Box_2D'][1]
+            crop = img[pt1[1]:pt2[1]+1, pt1[0]:pt2[0]+1]
+            crop = cv2.resize(src=crop, dsize=(224, 224), interpolation=cv2.INTER_CUBIC)
+            batch[one, 0, :, :] = crop[:, :, 2]
+            batch[one, 1, :, :] = crop[:, :, 1]
+            batch[one, 2, :, :] = crop[:, :, 0]
+            confidence[one, :] = data['Confidence'][:]
+            confidence_multi[one, :] = data['ConfidenceMulti'][:]
+            #confidence[one, :] /= np.sum(confidence[one, :])
+            ntheta[one] = data['Ntheta']
+
+            # what angle is this and how is it set?
+            # print(data['LocalAngle'] - self.centerAngle)
+            angleDiff[one, :] = data['LocalAngle'] - self.centerAngle
+            dim[one, :] = data['Dimension']
+            if self.mode == 'train':
+                if self.idx + 1 < self.num_of_patch:
+                    self.idx += 1
                 else:
-                    if self.idx + 1 < self.Total:
-                        self.idx += 1
-                    else:
-                        self.idx = 35570
-            return batch, confidence, confidence_multi, angleDiff, dim
+                    self.idx = 0
+            else:
+                if self.idx + 1 < self.Total:
+                    self.idx += 1
+                else:
+                    self.idx = 35570
+
+
+        return batch, confidence, confidence_multi, angleDiff, dim
