@@ -87,19 +87,24 @@ def calc_location(orient, dimension, calib, box_2d):
     K = calib
     R = rotation_matrix(orient)
     # [xmin, ymin, xmax, ymax]. This can be hard-coded. YOLO, etc. is consistant
-    b = [box_2d[0][0], box_2d[0][1], box_2d[1][0], box_2d[1][1]]
+    box_corners = [box_2d[0][0], box_2d[0][1], box_2d[1][0], box_2d[1][1]]
+
+    xmin = box_corners[0]
+    ymin = box_corners[1]
+    xmax = box_corners[2]
+    ymax = box_corners[3]
+
+
 
     # check the order on these, Velodyne coord system
     dx = dimension[0] / 2
     dy = dimension[2] / 2
     dz = dimension[1] / 2
 
-
-
     corners = []
+
     # get all the corners
     # this gives all 8 corners with respect to 0,0,0 being center of box
-
     for i in [1, -1]:
         for j in [1,-1]:
             for k in [1,-1]:
@@ -111,46 +116,58 @@ def calc_location(orient, dimension, calib, box_2d):
     # this should be 64 long, each possibility has 4 3d points
     constraints = []
 
-    # create M
-    M = np.zeros([4,4])
+
+    # create pre M (the term with I and the R*X)
+    pre_M = np.zeros([4,4])
     # 1's down diagonal
     for i in range(0,4):
-        M[i][i] = 1
-
-
-    indicies = [0,1,0,1]
+        pre_M[i][i] = 1
 
     best_loc = None
-    best_error = -1e09
+    best_error = 1e09
 
     # loop through each possible constraint, hold on to the best guess
+    # constraint will be 64 sets of 4 corners
     for constraint in constraints:
-        Ma = np.copy(M)
-        Mb = np.copy(M)
-        Mc = np.copy(M)
-        Md = np.copy(M)
-
+        # each corner
         Xa = constraint[0]
         Xb = constraint[1]
         Xc = constraint[2]
         Xd = constraint[3]
 
-        #TODO: put R*Xa into Ma, ... etc.
+        # M: all 1's down diagonal, and upper 3x1 is Rotation_matrix * [x, y, z]
+        Ma = np.copy(pre_M)
+        Mb = np.copy(pre_M)
+        Mc = np.copy(pre_M)
+        Md = np.copy(pre_M)
 
+        #TODO: put R*Xa into Ma ...
 
-        #TODO: create the Ax = b, see link above
+        indicies = [0,1,0,1]
+        X_array = [Xa, Xb, Xc, Xd]
+        M_array = [Ma, Mb, Mc, Md]
 
-        A = np.zeros([4,3], dtype=np.float) # reset for every new constraint
+        # create A, b
+        A = np.zeros([4,3], dtype=np.float)
+        b = np.zeros([4,1])
         for row, index in enumerate(indicies):
-            A[row,:] = 0 # TODO: calculate based on M and b[row]
+            X = X_array[row]
+            M = M_array[row]
 
+            # create M for corner Xx
+            RX = np.dot(R, X)
 
-        # solve here with least squares, solution in loc, put error in error
-        error = 1e-09
-        loc = None
+            M[:3,3] = RX.reshape(3)
+
+            A[row, :] = M[index,:3] - box_corners[row] * M[2,:3]
+            b[row] = box_corners[row] * M[2,3] - M[0,3]
+
+        # solve here with least squares, since over fit will get some error
+        loc, error, rank, s = np.linalg.lstsq(A, b)
 
         if error < best_error:
             best_loc = loc
+            best_error = error
 
 
     # [X,Y,Z] in 3D coords
@@ -394,7 +411,20 @@ if __name__ == '__main__':
     main()
 
 
-# all for error
+# create A
+# A[0,:] = Ma[0,:3] - xmin * Ma[2,:3]
+# A[1,:] = Ma[1,:3] - ymin * Mb[2,:3]
+# A[2,:] = Ma[0,:3] - xmax * Mc[2,:3]
+# A[3,:] = Ma[1,:3] - ymax * Md[2,:3]
+#
+# create b
+# b[0] = xmin * Ma[2,3] - Ma[0,3]
+# b[0] = ymin * Mb[2,3] - Mb[0,3]
+# b[0] = xmax * Mc[2,3] - Mc[0,3]
+# b[0] = ymax * Md[2,3] - Md[0,3]
+
+
+# below is for error
 #
 #     argmax = np.argmax(conf)
 #     orient = orient[argmax, :]
