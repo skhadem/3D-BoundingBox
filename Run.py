@@ -1,5 +1,5 @@
 """
-Goal:
+Goals:
 
 - use the 2D box from the label (cause we can get that from yolo)
 - resize said box in the EvalBatch method
@@ -22,6 +22,7 @@ import datetime
 from enum import Enum
 import numpy as np
 import itertools
+import random
 
 import Model
 import Dataset
@@ -31,8 +32,6 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from torchvision.models import vgg
-
-from math import sin, cos
 
 class cv_colors(Enum):
     RED = (0,0,255)
@@ -62,21 +61,28 @@ def create_2d_box(box_2d):
     return pt1, pt2, pt3, pt4
 
 
-# need to double check the coordinate system used, I believe it is Velodyne
+# need to double check the coordinate system used, I believe it is from camera coords
 # using this math: https://en.wikipedia.org/wiki/Rotation_matrix
 def rotation_matrix(yaw, pitch=0, roll=0):
-   tx = roll
-   ty = pitch
+    # print yaw
+    tx = roll
+    ty = pitch
 
-   # yaw comes out of the net as a 2x2, seems to be confidence and angle?
-   # get angle of highest confidence, (rad2deg?)
-   tz = yaw[np.argmax(yaw[:,0]), :][1]
+    # from net:
+    # yaw comes out of the net as a 2x2, seems to be confidence and angle?
+    # get angle of highest confidence, (rad2deg?)
+    # tz = yaw[np.argmax(yaw[:,0]), :][1]
 
-   Rx = np.array([[1,0,0], [0, cos(tx), -sin(tx)], [0, sin(tx), cos(tx)]])
-   Ry = np.array([[cos(ty), 0, -sin(ty)], [0, 1, 0], [sin(ty), 0, cos(ty)]])
-   Rz = np.array([[cos(tz), -sin(tz), 0], [sin(tz), cos(tz), 0], [0,0,1]])
+    # from truth:
+    tz = yaw # should be in radians
 
-   return np.dot(Rz, np.dot(Ry, Rx))
+    Rx = np.array([[1,0,0], [0, np.cos(tx), -np.sin(tx)], [0, np.sin(tx), np.cos(tx)]])
+    Ry = np.array([[np.cos(ty), 0, np.sin(ty)], [0, 1, 0], [-np.sin(ty), 0, np.cos(ty)]])
+    Rz = np.array([[np.cos(tz), -np.sin(tz), 0], [np.sin(tz), np.cos(tz), 0], [0,0,1]])
+
+
+    # return Rz.reshape([3,3]) # do we use this ?
+    return np.dot(Rz, np.dot(Ry, Rx))
 
 
 # this should be based on the paper. Math!
@@ -85,12 +91,11 @@ def rotation_matrix(yaw, pitch=0, roll=0):
 # Math help: http://ywpkwon.github.io/pdf/bbox3d-study.pdf
 def calc_location(orient, dimension, calib, box_2d):
 
-    # variables just like the equation
+    # variables with same names as the equation
     K = calib
-    R = rotation_matrix(orient)
-    # [xmin, ymin, xmax, ymax]. This can be hard-coded. YOLO, etc. is consistant
-    # box_corners = [box_2d[0][0], box_2d[0][1], box_2d[1][0], box_2d[1][1]]
+    R = rotation_matrix(np.deg2rad(orient))
 
+    # format 2d corners
     xmin = box_2d[0][0]
     ymin = box_2d[0][1]
     xmax = box_2d[1][0]
@@ -98,13 +103,11 @@ def calc_location(orient, dimension, calib, box_2d):
 
     box_corners = [xmin, ymin, xmax, ymax]
 
+    # TODO: check the order on these
     # print dimension
-    # return None
-
-    # check the order on these, Velodyne coord system
-    dx = dimension[2] / 2
+    dx = dimension[1] / 2
     dy = dimension[0] / 2
-    dz = dimension[1] / 2
+    dz = dimension[2] / 2
 
 
     corners = []
@@ -112,29 +115,23 @@ def calc_location(orient, dimension, calib, box_2d):
     # get all the corners
     # this gives all 8 corners with respect to 0,0,0 being center of box
     for i in [1, -1]:
-        for j in [1,-1]:
+        for j in [0,-2]:
             for k in [1,-1]:
                 corners.append([dx*i, dy*j, dz*k])
 
-    # print(corners)
 
     # need to get 64 possibilities for the order (xmin, ymin, xmax, ymax)
-    # TODO:How to do this??
-
     # this should be 64 long, each possibility has 4 3d points
     # [ [ [3D corner for xmin], [for ymin] ... x4 ], ... x64 ]
-    constraints = [[] for i in range(64)]
-
-
-    constraints = list(itertools.product(corners, repeat=4))
-
     # from paper:
     # each vertical side of the 2D detection box can correspond to [+/- dx/2, . , +/- dz/2]
     # each horizontal side of the 2D detection box can correspond to [., +/- dx , +/- dz/2]
     # this gives 256, which ones to remove for zero pitch/roll ?
-    # for i in range(0,)
+    # TODO:How to do this??
+    constraints = [[] for i in range(64)]
 
-
+    # for now, use all 4096 possible
+    constraints = list(itertools.product(corners, repeat=4))
 
     # create pre M (the term with I and the R*X)
     pre_M = np.zeros([4,4])
@@ -143,17 +140,20 @@ def calc_location(orient, dimension, calib, box_2d):
         pre_M[i][i] = 1
 
     best_loc = None
-    best_error = 1e09
+    best_error = [1e09]
+    best_X = None
 
     # loop through each possible constraint, hold on to the best guess
     # constraint will be 64 sets of 4 corners
+    count = 0
     for constraint in constraints:
-
         # each corner
         Xa = constraint[0]
         Xb = constraint[1]
         Xc = constraint[2]
         Xd = constraint[3]
+
+        X_array = [Xa, Xb, Xc, Xd]
 
         # M: all 1's down diagonal, and upper 3x1 is Rotation_matrix * [x, y, z]
         Ma = np.copy(pre_M)
@@ -161,14 +161,9 @@ def calc_location(orient, dimension, calib, box_2d):
         Mc = np.copy(pre_M)
         Md = np.copy(pre_M)
 
-
-        indicies = [0,1,0,1]
-        X_array = [Xa, Xb, Xc, Xd]
-        # print X_array
-        # return None
+        # we don't want ones with the 4 of the same corners
         repeat = False
         test_x = list(itertools.combinations(X_array, 2))
-
         for x in test_x:
             if x[0] == x[1]:
                 repeat = True
@@ -182,49 +177,69 @@ def calc_location(orient, dimension, calib, box_2d):
         # create A, b
         A = np.zeros([4,3], dtype=np.float)
         b = np.zeros([4,1])
+
+        indicies = [0,1,0,1]
         for row, index in enumerate(indicies):
             X = X_array[row]
             M = M_array[row]
 
             # create M for corner Xx
             RX = np.dot(R, X)
-
             M[:3,3] = RX.reshape(3)
 
-            # print(X)
-            # print(M)
-
             A[row, :] = M[index,:3] - box_corners[row] * M[2,:3]
-            b[row] = box_corners[row] * M[2,3] - M[0,3]
+            b[row] = box_corners[row] * M[2,3] - M[index,3]
 
         # solve here with least squares, since over fit will get some error
         loc, error, rank, s = np.linalg.lstsq(A, b)
-        # print(A)
-        # return None
 
+        # found a better estimation
         if error < best_error:
+            count += 1 # for debugging
             best_loc = loc
             best_error = error
+            best_X = X_array
+
+    # print count
+
+    return best_loc, best_X
+
+def plot_3d_pt(img, pts, center, calib_file=None, cam_to_img=None):
+    if calib_file is not None:
+        cam_to_img = get_calibration_cam_to_image(calib_file)
+
+    for pt in pts:
+        for i in range(3):
+            pt[i] = pt[i] + center[i]
+
+        point = np.array(pt)
+        point = np.append(point, 1)
+        point = np.dot(cam_to_img, point)
+        point = point[:2]/point[2]
+        point = point.astype(np.int16)
+
+        cv2.circle(img, (point[0], point[1]), 3, cv_colors.RED.value, thickness=-1)
 
 
-    # [X,Y,Z] in 3D coords
-    return best_loc
+# plot from net output
+def plot_3d_bbox(img, net_output, cam_to_img):
+    cam_to_img = get_calibration_cam_to_image(cam_to_img)
 
-def plot_3d_bbox(img, net_output, calib_file, truth_pose):
-    cam_to_img = get_calibration_cam_to_image(calib_file)
-
-    alpha = net_output['ThetaRay'] # ???? some angle
-    # theta_ray = label_info['theta_ray']
+    alpha = net_output['ThetaRay'] # Still confused on this angle
 
     box_2d = net_output['Box_2D']
     dims = net_output['Dimension']
     orient = net_output['Orientation']
 
     # center = label_info['Location']
-    center = calc_location(orient, dims, cam_to_img, box_2d)
+    center, X = calc_location(orient, dims, cam_to_img, box_2d)
+
+    center = [center[0][0], center[1][0], center[2][0]]
+
+    truth_pose = net_output['Truth_Pose']
+
     print "Estimated pose:"
     print center
-    print "--"
     print "Truth pose:"
     print truth_pose
     print "-------------"
@@ -238,11 +253,10 @@ def plot_3d_bbox(img, net_output, calib_file, truth_pose):
     cv2.line(img, pt3, pt4, cv_colors.BLUE.value, 2)
     cv2.line(img, pt4, pt1, cv_colors.BLUE.value, 2)
 
-    return img # for now just 2d boxes
-
-    # below will draw 3d box once the location is found with math (center)
-
-    img = plot_3d(img, cam_to_img, alpha, dims, center)
+    # for now visualize truth pose
+    center = truth_pose
+    img = plot_3d(img, cam_to_img, alpha, dims, center) # 3d boxes
+    plot_3d_pt(img, X, center, cam_to_img=cam_to_img) # red corner points that were used
 
     return img
 
@@ -254,7 +268,6 @@ def plot_truth_3d_bbox(img, label_info, calib_file):
     # seems to be the car's orientation
     # I think this is the red angle, which is regressed
     alpha = label_info['ThetaRay']
-
     dims = label_info['Dimension']
     center = label_info['Location']
 
@@ -282,6 +295,7 @@ def plot_3d(img, cam_to_img, alpha, dims, center):
                 point = point[:2]/point[2]
                 point = point.astype(np.int16)
                 box_3d.append(point)
+
 
     front_mark = []
     for i in range(4):
@@ -316,8 +330,12 @@ def draw_truth_boxes(img_idx, img_dataset, calib_file):
 
     info = img_dataset[img_idx]['Label']
 
+
     for item in info:
+        if item['Class'] == 'DontCare':
+            continue
         img = plot_truth_3d_bbox(img, item, calib_file)
+
 
     return img
 
@@ -366,6 +384,7 @@ def main():
 
 
     truth_img = draw_truth_boxes(0,img_data, calib_file)
+
     # cv2.imshow('Thruth data for index %s'%0,truth_img)
     # cv2.waitKey(0)
 
@@ -386,6 +405,9 @@ def main():
 
         for i, batch in enumerate(batches):
             info = infos[i]
+
+            if info['Class'] == 'DontCare':
+                continue
 
             # create tensor
             batch = Variable(torch.FloatTensor(batch), requires_grad=False).cuda()
@@ -422,26 +444,23 @@ def main():
 
             # format to pass into *math* functions and visualize
             net_output = {}
-            net_output['Orientation'] = orient
-            net_output['ThetaRay'] = theta
+            net_output['ThetaRay'] = info['ThetaRay']
             net_output['Box_2D'] = info['Box_2D'] # from label, will eventually be from yolo
-
-            truth_pose = info['Location']
 
             truth_dim = info['Dimension']
 
-            net_output['Dimension'] = truth_dim
+            # TODO: this seems like the correct truth angle, but double check
+            truth_orient = info['Ry']
 
-            # print "====="
-            #
-            # print truth_dim
-            # print dim
-            #
-            # print "====="
+            net_output['Orientation'] = truth_orient # orient
+            net_output['Dimension'] = truth_dim # dim
+
+            net_output['Truth_Pose'] = info['Location']
+
 
             # project 3d into 2d to visualize
             # img = img_data.GetImage(0)
-            img = plot_3d_bbox(img, net_output, calib_file, truth_pose)
+            img = plot_3d_bbox(img, net_output, calib_file)
 
 
     # cv2.imshow('Net output', img)
@@ -454,67 +473,5 @@ def main():
 
     exit()
 
-
-
-
-
-
-
-
 if __name__ == '__main__':
     main()
-
-
-# create A
-# A[0,:] = Ma[0,:3] - xmin * Ma[2,:3]
-# A[1,:] = Ma[1,:3] - ymin * Mb[2,:3]
-# A[2,:] = Ma[0,:3] - xmax * Mc[2,:3]
-# A[3,:] = Ma[1,:3] - ymax * Md[2,:3]
-#
-# create b
-# b[0] = xmin * Ma[2,3] - Ma[0,3]
-# b[0] = ymin * Mb[2,3] - Mb[0,3]
-# b[0] = xmax * Mc[2,3] - Mc[0,3]
-# b[0] = ymax * Md[2,3] - Md[0,3]
-
-
-# below is for error
-#
-#     argmax = np.argmax(conf)
-#     orient = orient[argmax, :]
-#     cos = orient[0]
-#     sin = orient[1]
-#
-#     theta = np.arctan2(sin, cos) / np.pi * 180
-#     theta = theta + centerAngle[argmax] / np.pi * 180
-#     theta = 360 - info['ThetaRay'] - theta
-#
-#     if theta > 0: theta -= int(theta / 360) * 360
-#     elif theta < 0: theta += (int(-theta / 360) + 1) * 360
-#
-#     if Ry > 0: Ry -= int(Ry / 360) * 360
-#     elif Ry < 0: Ry += (int(-Ry / 360) + 1) * 360
-#
-#     theta_error = abs(Ry - theta)
-#     if theta_error > 180: theta_error = 360 - theta_error
-#     angle_error.append(theta_error)
-#
-#     dim_error = np.mean(abs(np.array(dimGT) - dim))
-#     dimension_error.append(dim_error)
-#
-#
-#     print(info)
-#     exit()
-#
-#     #if i % 60 == 0:
-#     #    print (theta, Ry)
-#     #    print (dim.tolist(), dimGT)
-#     if i % 1000 == 0:
-#         now = datetime.datetime.now()
-#         now_s = now.strftime('%Y-%m-%d-%H-%M-%S')
-#         print '------- %s %.5d -------'%(now_s, i)
-#         print 'Angle error: %lf'%(np.mean(angle_error))
-#         print 'Dimension error: %lf'%(np.mean(dimension_error))
-#         print '-----------------------------'
-# print 'Angle error: %lf'%(np.mean(angle_error))
-# print 'Dimension error: %lf'%(np.mean(dimension_error))
