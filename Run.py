@@ -90,7 +90,6 @@ def rotation_matrix(yaw, pitch=0, roll=0):
 # calib is a 3x4 matrix, box_2d is [(xmin, ymin), (xmax, ymax)]
 # Math help: http://ywpkwon.github.io/pdf/bbox3d-study.pdf
 def calc_location(orient, dimension, calib, box_2d):
-
     # variables with same names as the equation
     K = calib
     R = rotation_matrix(np.deg2rad(orient))
@@ -100,6 +99,15 @@ def calc_location(orient, dimension, calib, box_2d):
     ymin = box_2d[0][1]
     xmax = box_2d[1][0]
     ymax = box_2d[1][1]
+
+    x_offset = (xmax + xmin) / 2
+    y_offset = (ymax + ymin) / 2
+
+    xmin -= x_offset
+    xmax -= x_offset
+    ymin -= y_offset
+    ymax -= y_offset
+
 
     box_corners = [xmin, ymin, xmax, ymax]
 
@@ -186,6 +194,8 @@ def calc_location(orient, dimension, calib, box_2d):
             # create M for corner Xx
             RX = np.dot(R, X)
             M[:3,3] = RX.reshape(3)
+
+            M = np.dot(K, M)
 
             A[row, :] = M[index,:3] - box_corners[row] * M[2,:3]
             b[row] = box_corners[row] * M[2,3] - M[index,3]
