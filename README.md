@@ -1,5 +1,5 @@
 The original repo did not visualize the 3D prediction so I am working on improving the evaluation and batch data classes to draw out predicted boxes.
-Run.py will be working evaluation script eventually.
+Run.py will be working evaluation script eventually. If interested, join the slack workspace where the paper is discussed, issues are worked through, and more! Click this [link](https://join.slack.com/t/3dboundingbox-oun9186/shared_invite/enQtNDk4Njg2NzYyNzY5LWVlZWRlMjNhZmZlYjVmNGY3NWVlNDA4MmY2ZWQ3ZmUyY2Q4OWIxMmY4NzU4YmViM2ViZWI5YjgxOTIyOTI4ZjI) to join.
 Original README:
 # 3D Bounding Box Estimation Using Deep Learning and Geometry
 
