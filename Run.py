@@ -39,13 +39,43 @@ class cv_colors(Enum):
     BLUE = (255,0,0)
 
 # read camera cal file and get intrinsic params
+# this is actually the projection matrix
 def get_calibration_cam_to_image(cab_f):
     for line in open(cab_f):
         if 'P2:' in line:
             cam_to_img = line.strip().split(' ')
             cam_to_img = np.asarray([float(number) for number in cam_to_img[1:]])
             cam_to_img = np.reshape(cam_to_img, (3, 4))
+            # cam_to_img[:,3] = 1
             return cam_to_img
+
+
+def get_R0(cab_f):
+    for line in open(cab_f):
+        if 'R0_rect:' in line:
+            R0 = line.strip().split(' ')
+            R0 = np.asarray([float(number) for number in R0[1:]])
+            R0 = np.reshape(R0, (3, 3))
+
+            R0_rect = np.zeros([4,4])
+            R0_rect[3,3] = 1
+            R0_rect[:3,:3] = R0
+
+            return R0_rect
+
+def get_tr_to_velo(cab_f):
+    for line in open(cab_f):
+        if 'Tr_velo_to_cam:' in line:
+            Tr = line.strip().split(' ')
+            Tr = np.asarray([float(number) for number in Tr[1:]])
+            Tr = np.reshape(Tr, (3, 4))
+
+            Tr_to_velo = np.zeros([4,4])
+            Tr_to_velo[3,3] = 1
+            Tr_to_velo[:3,:4] = Tr
+
+            return Tr_to_velo
+
 
 # from the 2 corners, return the 4 corners of a box in CCW order
 # coulda just used cv2.rectangle haha
@@ -66,23 +96,21 @@ def create_2d_box(box_2d):
 def rotation_matrix(yaw, pitch=0, roll=0):
     # print yaw
     tx = roll
-    ty = pitch
+    ty = yaw
+    tz = pitch
 
     # from net:
     # yaw comes out of the net as a 2x2, seems to be confidence and angle?
     # get angle of highest confidence, (rad2deg?)
     # tz = yaw[np.argmax(yaw[:,0]), :][1]
 
-    # from truth:
-    tz = yaw # should be in radians
-
     Rx = np.array([[1,0,0], [0, np.cos(tx), -np.sin(tx)], [0, np.sin(tx), np.cos(tx)]])
     Ry = np.array([[np.cos(ty), 0, np.sin(ty)], [0, 1, 0], [-np.sin(ty), 0, np.cos(ty)]])
     Rz = np.array([[np.cos(tz), -np.sin(tz), 0], [np.sin(tz), np.cos(tz), 0], [0,0,1]])
 
 
-    # return Rz.reshape([3,3]) # do we use this ?
-    return np.dot(Rz, np.dot(Ry, Rx))
+    # return Ry.reshape([3,3]) # do we use this ?
+    return np.dot(np.dot(Rz,Ry), Rx)
 
 
 # this should be based on the paper. Math!
@@ -214,26 +242,10 @@ def calc_location(orient, dimension, calib, box_2d):
 
     return best_loc, best_X
 
-def plot_3d_pt(img, pts, center, calib_file=None, cam_to_img=None):
-    if calib_file is not None:
-        cam_to_img = get_calibration_cam_to_image(calib_file)
-
-    for pt in pts:
-        for i in range(3):
-            pt[i] = pt[i] + center[i]
-
-        point = np.array(pt)
-        point = np.append(point, 1)
-        point = np.dot(cam_to_img, point)
-        point = point[:2]/point[2]
-        point = point.astype(np.int16)
-
-        cv2.circle(img, (point[0], point[1]), 3, cv_colors.RED.value, thickness=-1)
-
 
 # plot from net output
-def plot_3d_bbox(img, net_output, cam_to_img):
-    cam_to_img = get_calibration_cam_to_image(cam_to_img)
+def plot_3d_bbox(img, net_output, calib_file):
+    cam_to_img = get_calibration_cam_to_image(calib_file)
 
     alpha = net_output['ThetaRay'] # Still confused on this angle
 
@@ -265,48 +277,116 @@ def plot_3d_bbox(img, net_output, cam_to_img):
 
     # for now visualize truth pose
     center = truth_pose
-    img = plot_3d(img, cam_to_img, alpha, dims, center) # 3d boxes
-    plot_3d_pt(img, X, center, cam_to_img=cam_to_img) # red corner points that were used
+    img = plot_3d(img, calib_file, alpha, dims, center) # 3d boxes
+    plot_3d_pt(img, X, center, cam_to_img=cam_to_img, relative=True) # red corner points that were used
 
     return img
 
 # From KITTI : x = P2 * R0_rect * Tr_velo_to_cam * y
 # Velodyne coords
 def plot_truth_3d_bbox(img, label_info, calib_file):
-    cam_to_img = get_calibration_cam_to_image(calib_file)
+    # cam_to_img = get_calibration_cam_to_image(calib_file)
 
     # seems to be the car's orientation
     # I think this is the red angle, which is regressed
-    alpha = label_info['ThetaRay']
+
+    # alpha = np.deg2rad(label_info['Ry'])
+    alpha = np.deg2rad(label_info['Ry'] - label_info['Alpha'])
+    alpha = np.deg2rad(label_info['Alpha'])
+
+
     dims = label_info['Dimension']
     center = label_info['Location']
 
-    img = plot_3d(img, cam_to_img, alpha, dims, center)
+    img = plot_3d(img, calib_file, alpha, dims, center)
 
     return img
 
 
-def plot_3d(img, cam_to_img, alpha, dims, center):
-    # radians (of the camera angle I think)
-    # this angle is the same for every object in the scene
-    rot_y = alpha / 180 * np.pi  + np.arctan(center[0]/center[2])
+
+def plot_3d_pt(img, pts, center, calib_file=None, cam_to_img=None, relative=False):
+    if calib_file is not None:
+        cam_to_img = get_calibration_cam_to_image(calib_file)
+
+    for pt in pts:
+
+        if relative:
+            pt = [i + center[j] for j,i in enumerate(pt)] # more pythonic
+            # for i in range(3):
+            #     pt[i] = pt[i] + center[i]
+
+        point = np.array(pt)
+        point = np.append(point, 1)
+        point = np.dot(cam_to_img, point)
+        point = point[:2]/point[2]
+        point = point.astype(np.int16)
+
+        cv2.circle(img, (point[0], point[1]), 3, cv_colors.RED.value, thickness=-1)
+
+
+def plot_3d(img, calib_file, alpha, dimension, center):
+
+    cam_to_img = get_calibration_cam_to_image(calib_file)
+
+    plot_3d_pt(img, [center], center, cam_to_img=cam_to_img)
+
+    R = rotation_matrix(alpha)
+
+    dx = dimension[0] / 2
+    dy = dimension[1] / 2
+    dz = dimension[2] / 2
+
+
+    corners = []
+
+    # get all the corners
+    # this gives all 8 corners with respect to 0,0,0 being bottom ? of box
+    for i in [1, -1]:
+        for j in [0,-2]:
+            for k in [1,-1]:
+                corners.append([dx*i, dy*j, dz*k])
 
     box_3d = []
-    for i in [1,-1]:
-        for j in [1,-1]:
-            for k in [0,1]:
-                point = np.copy(center)
-                point[0] = center[0] + i * dims[1]/2 * np.cos(-rot_y+np.pi/2) + (j*i) * dims[2]/2 * np.cos(-rot_y)
-                point[2] = center[2] + i * dims[1]/2 * np.sin(-rot_y+np.pi/2) + (j*i) * dims[2]/2 * np.sin(-rot_y)
-                point[1] = center[1] - k * dims[0]
+    pre_M = np.zeros([4,4])
+    # 1's down diagonal
+    for i in range(0,4):
+        pre_M[i][i] = 1
 
-                point = np.append(point, 1)
-                point = np.dot(cam_to_img, point)
-                point = point[:2]/point[2]
-                point = point.astype(np.int16)
-                box_3d.append(point)
+    center.append(1)
+
+    for corner in corners:
+        M = np.copy(pre_M)
+        M[:3,3] = np.dot(R, corner).reshape(3)
+
+        point_2d = np.dot(np.dot(cam_to_img, M), center)
+        point_2d = point_2d[:2] / point_2d[2]
+        point_2d = point_2d.astype(np.int16)
+
+        box_3d.append(point_2d)
 
 
+
+    # need to put into loop
+
+    cv2.line(img, (box_3d[0][0], box_3d[0][1]), (box_3d[2][0],box_3d[2][1]), cv_colors.GREEN.value, 1)
+    cv2.line(img, (box_3d[4][0], box_3d[4][1]), (box_3d[6][0],box_3d[6][1]), cv_colors.GREEN.value, 1)
+    cv2.line(img, (box_3d[0][0], box_3d[0][1]), (box_3d[4][0],box_3d[4][1]), cv_colors.GREEN.value, 1)
+    cv2.line(img, (box_3d[2][0], box_3d[2][1]), (box_3d[6][0],box_3d[6][1]), cv_colors.GREEN.value, 1)
+
+    cv2.line(img, (box_3d[1][0], box_3d[1][1]), (box_3d[3][0],box_3d[3][1]), cv_colors.GREEN.value, 1)
+    cv2.line(img, (box_3d[1][0], box_3d[1][1]), (box_3d[5][0],box_3d[5][1]), cv_colors.GREEN.value, 1)
+    cv2.line(img, (box_3d[7][0], box_3d[7][1]), (box_3d[3][0],box_3d[3][1]), cv_colors.GREEN.value, 1)
+    cv2.line(img, (box_3d[7][0], box_3d[7][1]), (box_3d[5][0],box_3d[5][1]), cv_colors.GREEN.value, 1)
+
+    for i in range(0,7,2):
+        cv2.line(img, (box_3d[i][0], box_3d[i][1]), (box_3d[i+1][0],box_3d[i+1][1]), cv_colors.GREEN.value, 1)
+
+
+    return img
+
+
+    # need to figure this out with new points
+    
     front_mark = []
     for i in range(4):
         point_1_ = box_3d[2*i]
@@ -351,6 +431,13 @@ def draw_truth_boxes(img_idx, img_dataset, calib_file):
 
 
 def main():
+
+    try:
+        single_img_id = sys.argv[1]
+    except:
+        single_img_id = False
+
+
     # get models
     store_path = os.path.abspath(os.path.dirname(__file__)) + '/models'
     if not os.path.isdir(store_path):
@@ -384,32 +471,26 @@ def main():
 
 
 
-    img_data = Dataset.MyImageDataset(path + '/eval')
+    img_data = Dataset.MyImageDataset(os.path.abspath(os.path.dirname(__file__)) + '/eval')
     data = Dataset.MyBatchDataset(img_data, batches, bins, mode = 'eval')
-
-    # hard code for now, eventually should be based on image id gotten in loop
-    image_id = '000010'
-    calib_file = os.path.abspath(os.path.dirname(__file__)) + '/eval/calib/%s.txt' % image_id
-
-
-
-    truth_img = draw_truth_boxes(0,img_data, calib_file)
-
-    # cv2.imshow('Thruth data for index %s'%0,truth_img)
-    # cv2.waitKey(0)
-
-    # for error
-    # angle_error = []
-    # dimension_error = []
 
     # for i in range(data.num_of_patch):
     # angle = info['LocalAngle'] / np.pi * 180
     # Ry = info['Ry'] # ????
 
+
     for img_idx in range(0,data.num_images): # through the images
         # get the raw image, for visualization purposes
-        img = img_data.GetRawImage(img_idx)
+        img_ID = img_data[img_idx]['ID']
 
+        # single mode, image name is passed in
+        if single_img_id:
+            if img_ID != single_img_id:
+                continue
+
+        calib_file = os.path.abspath(os.path.dirname(__file__)) + '/eval/calib/%s.txt' % img_ID
+        truth_img = draw_truth_boxes(img_idx,img_data, calib_file)
+        img = img_data.GetRawImage(img_idx)
         # batches is the all objects in image, cropped
         batches, centerAngles, infos = data.formatForModel(img_idx)
 
@@ -476,12 +557,13 @@ def main():
     # cv2.imshow('Net output', img)
     # cv2.waitKey(0)
 
-    numpy_vertical = np.concatenate((truth_img, img), axis=0)
-    cv2.imshow('Truth on top, Prediction on bottom', numpy_vertical)
-    cv2.waitKey(0)
+        numpy_vertical = np.concatenate((truth_img, img), axis=0)
+        cv2.imshow('Truth on top, Prediction on bottom for image', numpy_vertical)
+        cv2.waitKey(0)
+        # cv2.destroyAllWindows()
 
 
-    exit()
+    # exit()
 
 if __name__ == '__main__':
     main()
