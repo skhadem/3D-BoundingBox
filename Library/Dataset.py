@@ -237,8 +237,8 @@ class MyImageDataset:
                 for i in range(1, len(line)):
                     line[i] = float(line[i])
                 Class = line[0]
-                Alpha = line[3] / np.pi * 180
-                Ry = line[14] / np.pi * 180
+                Alpha = line[3] #/ np.pi * 180
+                Ry = line[14] #/ np.pi * 180
                 top_left = (int(round(line[4])), int(round(line[5])))
                 bottom_right = (int(round(line[6])), int(round(line[7])))
                 Box_2D = [top_left, bottom_right]
@@ -407,7 +407,6 @@ class MyBatchDataset:
         labels = []
         for label in self.imgDataset:
             labels.append(label) # keep kitti format
-
         return labels
 
 
