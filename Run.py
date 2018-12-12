@@ -96,8 +96,8 @@ def create_2d_box(box_2d):
 def rotation_matrix(yaw, pitch=0, roll=0):
     # print yaw
     tx = roll
-    ty = pitch
-    tz = yaw
+    ty = yaw
+    tz = pitch
 
     # from net:
     # yaw comes out of the net as a 2x2, seems to be confidence and angle?
@@ -127,14 +127,6 @@ def calc_location(orient, dimension, calib, box_2d):
     ymin = box_2d[0][1]
     xmax = box_2d[1][0]
     ymax = box_2d[1][1]
-
-    x_offset = (xmax + xmin) / 2
-    y_offset = (ymax + ymin) / 2
-
-    xmin -= x_offset
-    xmax -= x_offset
-    ymin -= y_offset
-    ymax -= y_offset
 
 
     box_corners = [xmin, ymin, xmax, ymax]
@@ -234,7 +226,6 @@ def create_corners(dimension):
     dy = dimension[0] / 2
     dz = dimension[2] / 2
 
-
     corners = []
 
     # get all the corners
@@ -247,12 +238,21 @@ def create_corners(dimension):
     return corners
 
 # takes in a 3d point and projects it into 2d
-def project_3d_pt(pt, cam_to_img):
+def project_3d_pt(pt, calib_file):
+    cam_to_img = get_calibration_cam_to_image(calib_file)
+    R0_rect = get_R0(calib_file)
+    Tr_velo_to_cam = get_tr_to_velo(calib_file)
+
     point = np.array(pt)
     point = np.append(point, 1)
+
     point = np.dot(cam_to_img, point)
+    # point = np.dot(np.dot(np.dot(cam_to_img, R0_rect), Tr_velo_to_cam), point)
+
     point = point[:2]/point[2]
     point = point.astype(np.int16)
+
+
 
     return point
 
@@ -267,7 +267,7 @@ def plot_3d_pts(img, pts, center, calib_file=None, cam_to_img=None, relative=Fal
             # for i in range(3):
             #     pt[i] = pt[i] + center[i]
 
-        point = project_3d_pt(pt, cam_to_img)
+        point = project_3d_pt(pt, calib_file)
 
         cv2.circle(img, (point[0], point[1]), 3, cv_colors.RED.value, thickness=-1)
 
@@ -276,13 +276,13 @@ def plot_3d(img, calib_file, alpha, dimension, center):
 
     cam_to_img = get_calibration_cam_to_image(calib_file)
 
-    plot_3d_pts(img, [center], center, cam_to_img=cam_to_img)
+    plot_3d_pts(img, [center], center, calib_file=calib_file, cam_to_img=cam_to_img)
 
     R = rotation_matrix(alpha)
 
     corners = create_corners(dimension)
 
-    plot_3d_pts(img, corners, center, cam_to_img=cam_to_img, relative=True)
+    plot_3d_pts(img, corners, center, calib_file=calib_file,cam_to_img=cam_to_img, relative=True)
 
     box_3d = []
     pre_M = np.zeros([4,4])
@@ -295,11 +295,11 @@ def plot_3d(img, calib_file, alpha, dimension, center):
     for corner in corners:
 
         corner = [i + center[j] for j,i in enumerate(corner)]
-        point = np.array(corner)
-        point = np.append(point, 1)
-        point = np.dot(cam_to_img, point)
-        point = point[:2]/point[2]
-        point = point.astype(np.int16)
+
+        # hopefully, this is all it takes
+        # corner = np.dot(R, corner)
+
+        point = project_3d_pt(corner, calib_file)
 
         box_3d.append(point)
 
@@ -401,10 +401,10 @@ def plot_truth_3d_bbox(img, label_info, calib_file):
     # seems to be the car's orientation
     # I think this is the red angle, which is regressed
 
-    # alpha = np.deg2rad(label_info['Ry'])
+    # alpha = label_info['Ry']
     # alpha = np.deg2rad(label_info['Ry'] - label_info['Alpha'])
     # alpha = np.deg2rad(label_info['Alpha'])
-    alpha = label_info['Ry'] - label_info['Alpha']
+    alpha = label_info['Ry'] + label_info['Alpha']
 
 
     dims = label_info['Dimension']
@@ -492,9 +492,11 @@ def main():
 
         calib_file = os.path.abspath(os.path.dirname(__file__)) + '/eval/calib/%s.txt' % img_ID
         truth_img = draw_truth_boxes(img_idx,img_data, calib_file)
+
         img = img_data.GetRawImage(img_idx)
         # batches is the all objects in image, cropped
         batches, centerAngles, infos = data.formatForModel(img_idx)
+
 
         for i, batch in enumerate(batches):
             info = infos[i]
@@ -545,6 +547,8 @@ def main():
             # project 3d into 2d to visualize
             # img = img_data.GetImage(0)
             img = plot_3d_bbox(img, net_output, calib_file, info)
+
+
 
 
     # cv2.imshow('Net output', img)
