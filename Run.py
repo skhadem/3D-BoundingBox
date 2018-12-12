@@ -96,8 +96,8 @@ def create_2d_box(box_2d):
 def rotation_matrix(yaw, pitch=0, roll=0):
     # print yaw
     tx = roll
-    ty = yaw
-    tz = pitch
+    ty = pitch
+    tz = yaw
 
     # from net:
     # yaw comes out of the net as a 2x2, seems to be confidence and angle?
@@ -139,21 +139,7 @@ def calc_location(orient, dimension, calib, box_2d):
 
     box_corners = [xmin, ymin, xmax, ymax]
 
-    # TODO: check the order on these
-    # print dimension
-    dx = dimension[1] / 2
-    dy = dimension[0] / 2
-    dz = dimension[2] / 2
-
-
-    corners = []
-
-    # get all the corners
-    # this gives all 8 corners with respect to 0,0,0 being center of box
-    for i in [1, -1]:
-        for j in [0,-2]:
-            for k in [1,-1]:
-                corners.append([dx*i, dy*j, dz*k])
+    corners = create_corners(dimension)
 
 
     # need to get 64 possibilities for the order (xmin, ymin, xmax, ymax)
@@ -243,68 +229,34 @@ def calc_location(orient, dimension, calib, box_2d):
     return best_loc, best_X
 
 
-# plot from net output
-def plot_3d_bbox(img, net_output, calib_file):
-    cam_to_img = get_calibration_cam_to_image(calib_file)
-
-    alpha = net_output['ThetaRay'] # Still confused on this angle
-
-    box_2d = net_output['Box_2D']
-    dims = net_output['Dimension']
-    orient = net_output['Orientation']
-
-    # center = label_info['Location']
-    center, X = calc_location(orient, dims, cam_to_img, box_2d)
-
-    center = [center[0][0], center[1][0], center[2][0]]
-
-    truth_pose = net_output['Truth_Pose']
-
-    print "Estimated pose:"
-    print center
-    print "Truth pose:"
-    print truth_pose
-    print "-------------"
-
-    # create a square from the corners
-    pt1, pt2, pt3, pt4 = create_2d_box(box_2d)
-
-    # plot the 2d box
-    cv2.line(img, pt1, pt2, cv_colors.BLUE.value, 2)
-    cv2.line(img, pt2, pt3, cv_colors.BLUE.value, 2)
-    cv2.line(img, pt3, pt4, cv_colors.BLUE.value, 2)
-    cv2.line(img, pt4, pt1, cv_colors.BLUE.value, 2)
-
-    # for now visualize truth pose
-    center = truth_pose
-    img = plot_3d(img, calib_file, alpha, dims, center) # 3d boxes
-    plot_3d_pt(img, X, center, cam_to_img=cam_to_img, relative=True) # red corner points that were used
-
-    return img
-
-# From KITTI : x = P2 * R0_rect * Tr_velo_to_cam * y
-# Velodyne coords
-def plot_truth_3d_bbox(img, label_info, calib_file):
-    # cam_to_img = get_calibration_cam_to_image(calib_file)
-
-    # seems to be the car's orientation
-    # I think this is the red angle, which is regressed
-
-    # alpha = np.deg2rad(label_info['Ry'])
-    alpha = np.deg2rad(label_info['Ry'] - label_info['Alpha'])
-    alpha = np.deg2rad(label_info['Alpha'])
+def create_corners(dimension):
+    dx = dimension[1] / 2
+    dy = dimension[0] / 2
+    dz = dimension[2] / 2
 
 
-    dims = label_info['Dimension']
-    center = label_info['Location']
+    corners = []
 
-    img = plot_3d(img, calib_file, alpha, dims, center)
+    # get all the corners
+    # this gives all 8 corners with respect to 0,0,0 being bottom ? of box
+    for i in [1, -1]:
+        for j in [1,-1]:
+            for k in [1,-1]:
+                corners.append([dx*i, dy*j, dz*k])
 
-    return img
+    return corners
 
+# takes in a 3d point and projects it into 2d
+def project_3d_pt(pt, cam_to_img):
+    point = np.array(pt)
+    point = np.append(point, 1)
+    point = np.dot(cam_to_img, point)
+    point = point[:2]/point[2]
+    point = point.astype(np.int16)
 
+    return point
 
-def plot_3d_pt(img, pts, center, calib_file=None, cam_to_img=None, relative=False):
+def plot_3d_pts(img, pts, center, calib_file=None, cam_to_img=None, relative=False):
     if calib_file is not None:
         cam_to_img = get_calibration_cam_to_image(calib_file)
 
@@ -315,11 +267,7 @@ def plot_3d_pt(img, pts, center, calib_file=None, cam_to_img=None, relative=Fals
             # for i in range(3):
             #     pt[i] = pt[i] + center[i]
 
-        point = np.array(pt)
-        point = np.append(point, 1)
-        point = np.dot(cam_to_img, point)
-        point = point[:2]/point[2]
-        point = point.astype(np.int16)
+        point = project_3d_pt(pt, cam_to_img)
 
         cv2.circle(img, (point[0], point[1]), 3, cv_colors.RED.value, thickness=-1)
 
@@ -328,23 +276,13 @@ def plot_3d(img, calib_file, alpha, dimension, center):
 
     cam_to_img = get_calibration_cam_to_image(calib_file)
 
-    plot_3d_pt(img, [center], center, cam_to_img=cam_to_img)
+    plot_3d_pts(img, [center], center, cam_to_img=cam_to_img)
 
     R = rotation_matrix(alpha)
 
-    dx = dimension[0] / 2
-    dy = dimension[1] / 2
-    dz = dimension[2] / 2
+    corners = create_corners(dimension)
 
-
-    corners = []
-
-    # get all the corners
-    # this gives all 8 corners with respect to 0,0,0 being bottom ? of box
-    for i in [1, -1]:
-        for j in [0,-2]:
-            for k in [1,-1]:
-                corners.append([dx*i, dy*j, dz*k])
+    plot_3d_pts(img, corners, center, cam_to_img=cam_to_img, relative=True)
 
     box_3d = []
     pre_M = np.zeros([4,4])
@@ -355,16 +293,15 @@ def plot_3d(img, calib_file, alpha, dimension, center):
     center.append(1)
 
     for corner in corners:
-        M = np.copy(pre_M)
-        M[:3,3] = np.dot(R, corner).reshape(3)
 
-        point_2d = np.dot(np.dot(cam_to_img, M), center)
-        point_2d = point_2d[:2] / point_2d[2]
-        point_2d = point_2d.astype(np.int16)
+        corner = [i + center[j] for j,i in enumerate(corner)]
+        point = np.array(corner)
+        point = np.append(point, 1)
+        point = np.dot(cam_to_img, point)
+        point = point[:2]/point[2]
+        point = point.astype(np.int16)
 
-        box_3d.append(point_2d)
-
-
+        box_3d.append(point)
 
     # need to put into loop
 
@@ -381,12 +318,11 @@ def plot_3d(img, calib_file, alpha, dimension, center):
     for i in range(0,7,2):
         cv2.line(img, (box_3d[i][0], box_3d[i][1]), (box_3d[i+1][0],box_3d[i+1][1]), cv_colors.GREEN.value, 1)
 
-
-    return img
+    return
 
 
     # need to figure this out with new points
-    
+
     front_mark = []
     for i in range(4):
         point_1_ = box_3d[2*i]
@@ -411,7 +347,73 @@ def plot_3d(img, calib_file, alpha, dimension, center):
         point_2_ = box_3d[(i+2)%8]
         cv2.line(img, (point_1_[0], point_1_[1]), (point_2_[0], point_2_[1]), cv_colors.GREEN.value, 1)
 
+    return
+
+
+# plot from net output
+def plot_3d_bbox(img, net_output, calib_file, label):
+    cam_to_img = get_calibration_cam_to_image(calib_file)
+
+
+    box_2d = net_output['Box_2D']
+    dims = net_output['Dimension']
+    orient = net_output['Orientation']
+
+    truth_dims = label['Dimension']
+
+    #TODO fifure out this angle
+    truth_orient = label['Ry'] - label['Alpha']
+
+    # center = label_info['Location']
+    center, X = calc_location(truth_orient, truth_dims, cam_to_img, box_2d)
+
+    center = [center[0][0], center[1][0], center[2][0]]
+
+    truth_pose = label['Location']
+
+    print "Estimated pose:"
+    print center
+    print "Truth pose:"
+    print truth_pose
+    print "-------------"
+
+    # create a square from the corners
+    pt1, pt2, pt3, pt4 = create_2d_box(box_2d)
+
+    # plot the 2d box
+    cv2.line(img, pt1, pt2, cv_colors.BLUE.value, 2)
+    cv2.line(img, pt2, pt3, cv_colors.BLUE.value, 2)
+    cv2.line(img, pt3, pt4, cv_colors.BLUE.value, 2)
+    cv2.line(img, pt4, pt1, cv_colors.BLUE.value, 2)
+
+    # for now visualize truth pose
+    plot_3d(img, calib_file, truth_orient, truth_dims, truth_pose) # 3d boxes
+
+    # plot_3d_pts(img, X, truth_pose, cam_to_img=cam_to_img, relative=True) # red corner points that were used
+
     return img
+
+# From KITTI : x = P2 * R0_rect * Tr_velo_to_cam * y
+# Velodyne coords
+def plot_truth_3d_bbox(img, label_info, calib_file):
+    # cam_to_img = get_calibration_cam_to_image(calib_file)
+
+    # seems to be the car's orientation
+    # I think this is the red angle, which is regressed
+
+    # alpha = np.deg2rad(label_info['Ry'])
+    # alpha = np.deg2rad(label_info['Ry'] - label_info['Alpha'])
+    # alpha = np.deg2rad(label_info['Alpha'])
+    alpha = label_info['Ry'] - label_info['Alpha']
+
+
+    dims = label_info['Dimension']
+    center = label_info['Location']
+
+    plot_3d(img, calib_file, alpha, dims, center)
+
+    return img
+
 
 
 def draw_truth_boxes(img_idx, img_dataset, calib_file):
@@ -535,23 +537,14 @@ def main():
 
             # format to pass into *math* functions and visualize
             net_output = {}
-            net_output['ThetaRay'] = info['ThetaRay']
             net_output['Box_2D'] = info['Box_2D'] # from label, will eventually be from yolo
 
-            truth_dim = info['Dimension']
-
-            # TODO: this seems like the correct truth angle, but double check
-            truth_orient = info['Ry']
-
-            net_output['Orientation'] = truth_orient # orient
-            net_output['Dimension'] = truth_dim # dim
-
-            net_output['Truth_Pose'] = info['Location']
-
+            net_output['Orientation'] = orient
+            net_output['Dimension'] = dim
 
             # project 3d into 2d to visualize
             # img = img_data.GetImage(0)
-            img = plot_3d_bbox(img, net_output, calib_file)
+            img = plot_3d_bbox(img, net_output, calib_file, info)
 
 
     # cv2.imshow('Net output', img)

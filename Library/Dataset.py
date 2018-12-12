@@ -248,7 +248,7 @@ class MyImageDataset:
                 Dimension = [line[8], line[9], line[10]] # height, width, length
                 Location = [line[11], line[12], line[13]] # x, y, z
                 # bring the KITTI center up to the middle of the object
-                # Location[1] -= Dimension[0] / 2
+                Location[1] -= Dimension[0] / 2
 
                 ThetaRay = (np.arctan2(Location[2], Location[0])) / np.pi * 180
                 #if Ry > 0:
