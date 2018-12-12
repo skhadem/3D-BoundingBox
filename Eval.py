@@ -94,18 +94,18 @@ if __name__ == '__main__':
 
 
     data = Dataset.ImageDataset(path + '/training')
-    img = data.GetImage(10)
-
-    info = data[10]['Label']
-
-    for item in info:
-        img = plot_3d_bbox(img, item, camera_cal)
-
-    cv2.imshow('test',img)
-    cv2.waitKey(0)
-
-    exit()
-
+    # img = data.GetImage(10)
+    #
+    # info = data[10]['Label']
+    #
+    # for item in info:
+    #     img = plot_3d_bbox(img, item, camera_cal)
+    #
+    # cv2.imshow('test',img)
+    # cv2.waitKey(0)
+    #
+    # exit()
+    #
 
 
 
@@ -124,9 +124,12 @@ if __name__ == '__main__':
 
     angle_error = []
     dimension_error = []
+
     for i in range(data.num_of_patch):
         batch, centerAngle, info = data.EvalBatch()
         dimGT = info['Dimension']
+        print info
+        
         angle = info['LocalAngle'] / np.pi * 180
         Ry = info['Ry']
         batch = Variable(torch.FloatTensor(batch), requires_grad=False).cuda()
@@ -136,6 +139,8 @@ if __name__ == '__main__':
         orient = orient.cpu().data.numpy()[0, :, :]
         conf = conf.cpu().data.numpy()[0, :]
         dim = dim.cpu().data.numpy()[0, :]
+        print dim
+        exit()
         argmax = np.argmax(conf)
         orient = orient[argmax, :]
         cos = orient[0]
@@ -157,8 +162,10 @@ if __name__ == '__main__':
         dimension_error.append(dim_error)
 
 
-        print(info)
-        exit()
+        # print(info)
+        # exit()
+
+
 
         #if i % 60 == 0:
         #    print (theta, Ry)

@@ -236,6 +236,7 @@ class MyImageDataset:
                 line = line[:-1].split(' ')
                 for i in range(1, len(line)):
                     line[i] = float(line[i])
+
                 Class = line[0]
                 Alpha = line[3] #/ np.pi * 180
                 Ry = line[14] #/ np.pi * 180
@@ -246,6 +247,9 @@ class MyImageDataset:
                 # seems to be the output of the net so don't use it from here
                 Dimension = [line[8], line[9], line[10]] # height, width, length
                 Location = [line[11], line[12], line[13]] # x, y, z
+                # bring the KITTI center up to the middle of the object
+                # Location[1] -= Dimension[0] / 2
+
                 ThetaRay = (np.arctan2(Location[2], Location[0])) / np.pi * 180
                 #if Ry > 0:
                 #    LocalAngle = (180 - Ry) + (180 - ThetaRay)

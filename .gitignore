@@ -5,3 +5,5 @@ Test/data
 models/
 train.py
 Kitti
+comments.txt
+vizualize_data_fmt.txt
