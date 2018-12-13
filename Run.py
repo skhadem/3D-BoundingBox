@@ -6,7 +6,7 @@ Goals:
 - pass that through the model (it's a tensor)
 - using output dimension and oreintation calculate the location ( based on camera cal )
     this can be done by the method in the paper
-- back propogate the 3d location to a 2d location using plot_3d_bbox
+- back propogate the 3d location to a 2d location using plot_regressed_3d_bbox
 - draw on image, look at output
 
 """
@@ -109,8 +109,8 @@ def rotation_matrix(yaw, pitch=0, roll=0):
     Rz = np.array([[np.cos(tz), -np.sin(tz), 0], [np.sin(tz), np.cos(tz), 0], [0,0,1]])
 
 
-    # return Ry.reshape([3,3]) # do we use this ?
-    return np.dot(np.dot(Rz,Ry), Rx)
+    return Ry.reshape([3,3]) # do we use this ?
+    # return np.dot(np.dot(Rz,Ry), Rx)
 
 
 # this should be based on the paper. Math!
@@ -132,7 +132,6 @@ def calc_location(orient, dimension, calib, box_2d):
     box_corners = [xmin, ymin, xmax, ymax]
 
     corners = create_corners(dimension)
-
 
     # need to get 64 possibilities for the order (xmin, ymin, xmax, ymax)
     # this should be 64 long, each possibility has 4 3d points
@@ -220,28 +219,46 @@ def calc_location(orient, dimension, calib, box_2d):
 
     return best_loc, best_X
 
-
-def create_corners(dimension):
-    dx = dimension[1] / 2
+# option to rotate and shift (for label info)
+def create_corners(dimension, location=None, R=None):
+    dx = dimension[2] / 2
     dy = dimension[0] / 2
-    dz = dimension[2] / 2
+    dz = dimension[1] / 2
 
-    corners = []
 
-    # get all the corners
-    # this gives all 8 corners with respect to 0,0,0 being bottom ? of box
+    x_corners = []
+    y_corners = []
+    z_corners = []
+
     for i in [1, -1]:
         for j in [1,-1]:
             for k in [1,-1]:
-                corners.append([dx*i, dy*j, dz*k])
+                x_corners.append(dx*i)
+                y_corners.append(dy*j)
+                z_corners.append(dz*k)
 
-    return corners
+    corners = [x_corners, y_corners, z_corners]
+
+    if R is not None:
+        corners = np.dot(R, corners)
+
+    if location is not None:
+        for i,loc in enumerate(location):
+            corners[i,:] = corners[i,:] + loc
+
+    final_corners = []
+    for i in range(8):
+        final_corners.append([corners[0][i], corners[1][i], corners[2][i]])
+
+
+    return final_corners
 
 # takes in a 3d point and projects it into 2d
-def project_3d_pt(pt, calib_file):
-    cam_to_img = get_calibration_cam_to_image(calib_file)
-    R0_rect = get_R0(calib_file)
-    Tr_velo_to_cam = get_tr_to_velo(calib_file)
+def project_3d_pt(pt, cam_to_img, calib_file=None):
+    if calib_file is not None:
+        cam_to_img = get_calibration_cam_to_image(calib_file)
+        R0_rect = get_R0(calib_file)
+        Tr_velo_to_cam = get_tr_to_velo(calib_file)
 
     point = np.array(pt)
     point = np.append(point, 1)
@@ -263,43 +280,33 @@ def plot_3d_pts(img, pts, center, calib_file=None, cam_to_img=None, relative=Fal
     for pt in pts:
 
         if relative:
-            pt = [i + center[j] for j,i in enumerate(pt)] # more pythonic
+            pass
+            # pt = [i + center[j] for j,i in enumerate(pt)] # more pythonic
             # for i in range(3):
             #     pt[i] = pt[i] + center[i]
 
-        point = project_3d_pt(pt, calib_file)
+        point = project_3d_pt(pt, cam_to_img)
 
         cv2.circle(img, (point[0], point[1]), 3, cv_colors.RED.value, thickness=-1)
 
 
-def plot_3d(img, calib_file, alpha, dimension, center):
+def plot_3d(img, calib_file, ry, dimension, center):
 
     cam_to_img = get_calibration_cam_to_image(calib_file)
 
     plot_3d_pts(img, [center], center, calib_file=calib_file, cam_to_img=cam_to_img)
 
-    R = rotation_matrix(alpha)
+    R = rotation_matrix(ry)
 
-    corners = create_corners(dimension)
+    corners = create_corners(dimension, location=center, R=R)
 
-    plot_3d_pts(img, corners, center, calib_file=calib_file,cam_to_img=cam_to_img, relative=True)
+    # to see the corners on image as red circles
+    # plot_3d_pts(img, corners, center, calib_file=calib_file,cam_to_img=cam_to_img, relative=True)
 
     box_3d = []
-    pre_M = np.zeros([4,4])
-    # 1's down diagonal
-    for i in range(0,4):
-        pre_M[i][i] = 1
-
-    center.append(1)
 
     for corner in corners:
-
-        corner = [i + center[j] for j,i in enumerate(corner)]
-
-        # hopefully, this is all it takes
-        # corner = np.dot(R, corner)
-
-        point = project_3d_pt(corner, calib_file)
+        point = project_3d_pt(corner, cam_to_img)
 
         box_3d.append(point)
 
@@ -318,53 +325,40 @@ def plot_3d(img, calib_file, alpha, dimension, center):
     for i in range(0,7,2):
         cv2.line(img, (box_3d[i][0], box_3d[i][1]), (box_3d[i+1][0],box_3d[i+1][1]), cv_colors.GREEN.value, 1)
 
-    return
 
 
-    # need to figure this out with new points
-
+    # TODO: put in loop
     front_mark = []
-    for i in range(4):
-        point_1_ = box_3d[2*i]
-        point_2_ = box_3d[2*i+1]
-        cv2.line(img, (point_1_[0], point_1_[1]), (point_2_[0], point_2_[1]), cv_colors.GREEN.value, 1)
+    front_mark.append((box_3d[1][0], box_3d[1][1]))
+    front_mark.append((box_3d[2][0], box_3d[2][1]))
+    front_mark.append((box_3d[0][0], box_3d[0][1]))
+    front_mark.append((box_3d[3][0], box_3d[3][1]))
 
-         # get the front of the box
-        if alpha > 90:
-            if i == 0 or i == 3:
-                front_mark.append((point_1_[0], point_1_[1]))
-                front_mark.append((point_2_[0], point_2_[1]))
-        if alpha <= 90:
-            if i == 1 or i == 2:
-                front_mark.append((point_1_[0], point_1_[1]))
-                front_mark.append((point_2_[0], point_2_[1]))
-
-    cv2.line(img, front_mark[0], front_mark[-1], cv_colors.BLUE.value, 1)
-    cv2.line(img, front_mark[1], front_mark[2], cv_colors.BLUE.value, 1)
-
-    for i in range(8):
-        point_1_ = box_3d[i]
-        point_2_ = box_3d[(i+2)%8]
-        cv2.line(img, (point_1_[0], point_1_[1]), (point_2_[0], point_2_[1]), cv_colors.GREEN.value, 1)
-
-    return
+    cv2.line(img, front_mark[0], front_mark[1], cv_colors.BLUE.value, 1)
+    cv2.line(img, front_mark[2], front_mark[3], cv_colors.BLUE.value, 1)
 
 
 # plot from net output
-def plot_3d_bbox(img, net_output, calib_file, label):
+def plot_regressed_3d_bbox(img, net_output, calib_file, label):
     cam_to_img = get_calibration_cam_to_image(calib_file)
-
-
     box_2d = net_output['Box_2D']
+
+    # center of 2d box
+    box_2d_center = [(box_2d[1][0] + box_2d[0][0]) / 2, (box_2d[1][1] + box_2d[0][1]) / 2]
+
+    # angle from camera to the center of the box
+    alpha = np.arctan(box_2d_center[0] / box_2d_center[1])
+
     dims = net_output['Dimension']
     orient = net_output['Orientation']
 
+    #TODO: add alpha to regressed orient
+
+    # use truth for now
     truth_dims = label['Dimension']
+    truth_orient = label['Ry']
 
-    #TODO fifure out this angle
-    truth_orient = label['Ry'] - label['Alpha']
-
-    # center = label_info['Location']
+    # the math! returns X, the corners used for constraint
     center, X = calc_location(truth_orient, truth_dims, cam_to_img, box_2d)
 
     center = [center[0][0], center[1][0], center[2][0]]
@@ -386,27 +380,18 @@ def plot_3d_bbox(img, net_output, calib_file, label):
     cv2.line(img, pt3, pt4, cv_colors.BLUE.value, 2)
     cv2.line(img, pt4, pt1, cv_colors.BLUE.value, 2)
 
-    # for now visualize truth pose
+    # for now visualize truth pose, soon this should come from the calculated center
     plot_3d(img, calib_file, truth_orient, truth_dims, truth_pose) # 3d boxes
 
-    # plot_3d_pts(img, X, truth_pose, cam_to_img=cam_to_img, relative=True) # red corner points that were used
+    # plot the corners that were used
+    plot_3d_pts(img, X, truth_pose, cam_to_img=cam_to_img, relative=True)
 
     return img
 
 # From KITTI : x = P2 * R0_rect * Tr_velo_to_cam * y
 # Velodyne coords
 def plot_truth_3d_bbox(img, label_info, calib_file):
-    # cam_to_img = get_calibration_cam_to_image(calib_file)
-
-    # seems to be the car's orientation
-    # I think this is the red angle, which is regressed
-
-    # alpha = label_info['Ry']
-    # alpha = np.deg2rad(label_info['Ry'] - label_info['Alpha'])
-    # alpha = np.deg2rad(label_info['Alpha'])
-    alpha = label_info['Ry'] + label_info['Alpha']
-
-
+    alpha = label_info['Ry']
     dims = label_info['Dimension']
     center = label_info['Location']
 
@@ -546,10 +531,7 @@ def main():
 
             # project 3d into 2d to visualize
             # img = img_data.GetImage(0)
-            img = plot_3d_bbox(img, net_output, calib_file, info)
-
-
-
+            img = plot_regressed_3d_bbox(img, net_output, calib_file, info)
 
     # cv2.imshow('Net output', img)
     # cv2.waitKey(0)
