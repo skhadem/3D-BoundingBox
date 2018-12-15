@@ -120,7 +120,7 @@ def rotation_matrix(yaw, pitch=0, roll=0):
 def calc_location(orient, dimension, calib, box_2d):
     # variables with same names as the equation
     K = calib
-    R = rotation_matrix(np.deg2rad(orient))
+    R = rotation_matrix(orient)
 
     # format 2d corners
     xmin = box_2d[0][0]
@@ -280,8 +280,7 @@ def plot_3d_pts(img, pts, center, calib_file=None, cam_to_img=None, relative=Fal
     for pt in pts:
 
         if relative:
-            pass
-            # pt = [i + center[j] for j,i in enumerate(pt)] # more pythonic
+            pt = [i + center[j] for j,i in enumerate(pt)] # more pythonic
             # for i in range(3):
             #     pt[i] = pt[i] + center[i]
 
@@ -294,14 +293,14 @@ def plot_3d(img, calib_file, ry, dimension, center):
 
     cam_to_img = get_calibration_cam_to_image(calib_file)
 
-    plot_3d_pts(img, [center], center, calib_file=calib_file, cam_to_img=cam_to_img)
+    # plot_3d_pts(img, [center], center, calib_file=calib_file, cam_to_img=cam_to_img)
 
     R = rotation_matrix(ry)
 
     corners = create_corners(dimension, location=center, R=R)
 
     # to see the corners on image as red circles
-    # plot_3d_pts(img, corners, center, calib_file=calib_file,cam_to_img=cam_to_img, relative=True)
+    # plot_3d_pts(img, corners, center,cam_to_img=cam_to_img, relative=False)
 
     box_3d = []
 
@@ -384,7 +383,22 @@ def plot_regressed_3d_bbox(img, net_output, calib_file, label):
     plot_3d(img, calib_file, truth_orient, truth_dims, truth_pose) # 3d boxes
 
     # plot the corners that were used
-    plot_3d_pts(img, X, truth_pose, cam_to_img=cam_to_img, relative=True)
+    # these corners returned are the ones that are unrotated, because they were
+    # in the calculation. We must find the indicies of the corners used, then generate
+    # the roated corners and visualize those
+
+    corners = create_corners(truth_dims) # unrotated
+
+    corner_indexes = [corners.index(i) for i in X] # get indexes
+
+
+    # get the rotated version
+    R = rotation_matrix(truth_orient)
+    corners = create_corners(truth_dims, location=truth_pose, R=R)
+    corners_used = [corners[i] for i in corner_indexes]
+
+    # plot
+    plot_3d_pts(img, corners_used, truth_pose, cam_to_img=cam_to_img, relative=False)
 
     return img
 
