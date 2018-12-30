@@ -1,13 +1,33 @@
 """
-Goals:
+Big Picture:
 
-- use the 2D box from the label (cause we can get that from yolo)
-- resize said box in the EvalBatch method
-- pass that through the model (it's a tensor)
-- using output dimension and oreintation calculate the location ( based on camera cal )
-    this can be done by the method in the paper
-- back propogate the 3d location to a 2d location using plot_regressed_3d_bbox
-- draw on image, look at output
+- use a 2D box of an object in scene (can get it from label or yolo eventually)
+- pass image cropped to object through the model
+- net outputs dimension and oreintation, then calculate the location (T) using camera
+    cal and lots of math
+- put the calculated 3d location onto 2d image using plot_regressed_3d_bbox
+- visualize
+
+Plan:
+
+[x] reformat data structure to understand it better
+[ ] use purely truth values from label for dimension and orient to test math
+[ ] use the label 2d_box to get dimension and orient from net
+[ ] use yolo or rcnn to get the 2d box and class, so run from just an image (and cal)
+[ ] Try and optimize to be able to run on video
+[ ] Ros node eventually
+
+Random TODOs:
+
+[ ] Move alot of functions to a library and import it
+
+
+Notes:
+
+- The net outputs an angle (actually a sin and cos) relative to an angle defined
+    by the # of bins, thus the # of bins used to train model should be known
+- Everything should be using radians, just for consistancy
+- Is class ever used? Could this be an improvement?
 
 """
 
@@ -225,7 +245,6 @@ def create_corners(dimension, location=None, R=None):
     dy = dimension[0] / 2
     dz = dimension[1] / 2
 
-
     x_corners = []
     y_corners = []
     z_corners = []
@@ -239,9 +258,11 @@ def create_corners(dimension, location=None, R=None):
 
     corners = [x_corners, y_corners, z_corners]
 
+    # rotate if R is passed in
     if R is not None:
         corners = np.dot(R, corners)
 
+    # shift if location is passed in
     if location is not None:
         for i,loc in enumerate(location):
             corners[i,:] = corners[i,:] + loc
@@ -269,20 +290,16 @@ def project_3d_pt(pt, cam_to_img, calib_file=None):
     point = point[:2]/point[2]
     point = point.astype(np.int16)
 
-
-
     return point
 
+# take in 3d points and plot them on image as red circles
 def plot_3d_pts(img, pts, center, calib_file=None, cam_to_img=None, relative=False):
     if calib_file is not None:
         cam_to_img = get_calibration_cam_to_image(calib_file)
 
     for pt in pts:
-
         if relative:
             pt = [i + center[j] for j,i in enumerate(pt)] # more pythonic
-            # for i in range(3):
-            #     pt[i] = pt[i] + center[i]
 
         point = project_3d_pt(pt, cam_to_img)
 
@@ -336,22 +353,30 @@ def plot_3d(img, calib_file, ry, dimension, center):
     cv2.line(img, front_mark[0], front_mark[1], cv_colors.BLUE.value, 1)
     cv2.line(img, front_mark[2], front_mark[3], cv_colors.BLUE.value, 1)
 
+def plot_2d_box(img, box_2d):
+    # create a square from the corners
+    pt1, pt2, pt3, pt4 = create_2d_box(box_2d)
 
-# plot from net output
+    # plot the 2d box
+    cv2.line(img, pt1, pt2, cv_colors.BLUE.value, 2)
+    cv2.line(img, pt2, pt3, cv_colors.BLUE.value, 2)
+    cv2.line(img, pt3, pt4, cv_colors.BLUE.value, 2)
+    cv2.line(img, pt4, pt1, cv_colors.BLUE.value, 2)
+
+
+# plot from net output. The orient should be global
+# after done testing math, can remove label param
 def plot_regressed_3d_bbox(img, net_output, calib_file, label):
     cam_to_img = get_calibration_cam_to_image(calib_file)
     box_2d = net_output['Box_2D']
 
     # center of 2d box
     box_2d_center = [(box_2d[1][0] + box_2d[0][0]) / 2, (box_2d[1][1] + box_2d[0][1]) / 2]
-
-    # angle from camera to the center of the box
+    # what is this compared to theta_ray, don't think it's necessary here
     alpha = np.arctan(box_2d_center[0] / box_2d_center[1])
 
     dims = net_output['Dimension']
     orient = net_output['Orientation']
-
-    #TODO: add alpha to regressed orient
 
     # use truth for now
     truth_dims = label['Dimension']
@@ -370,14 +395,7 @@ def plot_regressed_3d_bbox(img, net_output, calib_file, label):
     print truth_pose
     print "-------------"
 
-    # create a square from the corners
-    pt1, pt2, pt3, pt4 = create_2d_box(box_2d)
-
-    # plot the 2d box
-    cv2.line(img, pt1, pt2, cv_colors.BLUE.value, 2)
-    cv2.line(img, pt2, pt3, cv_colors.BLUE.value, 2)
-    cv2.line(img, pt3, pt4, cv_colors.BLUE.value, 2)
-    cv2.line(img, pt4, pt1, cv_colors.BLUE.value, 2)
+    plot_2d_box(img, box_2d)
 
     # for now visualize truth pose, soon this should come from the calculated center
     plot_3d(img, calib_file, truth_orient, truth_dims, truth_pose) # 3d boxes
@@ -430,9 +448,37 @@ def draw_truth_boxes(img_idx, img_dataset, calib_file):
 
     return img
 
+# using config # of bins, create array of 0..2pi split into bins
+# radians
+def generate_angle_bins(bins):
+    interval = 2 * np.pi / bins
+
+    angle_bins = np.zeros(bins)
+
+    for i in range(1, bins):
+        angle_bins[i] = i * interval
+
+    return angle_bins
+
+#TODO: implement this:
+#https://math.stackexchange.com/questions/1320285/convert-a-pixel-displacement-to-angular-rotation
+# helpful:
+#https://stackoverflow.com/questions/39992968/how-to-calculate-field-of-view-of-the-camera-from-camera-intrinsic-matrix
+def calc_theta_ray(box_2d):
+    pass
+
+def format_net_output(box_2d, orient, dim):
+    net_output = {}
+    net_output['Box_2D'] = box_2d
+    net_output['Orientation'] = orient
+    net_output['Dimension'] = dim
+
+    return net_output
+
 
 def main():
 
+    # option to do a single image if passed as arg, or do all in ./eval
     try:
         single_img_id = sys.argv[1]
     except:
@@ -450,10 +496,11 @@ def main():
     # get net's config
     with open('config.yaml', 'r') as f:
         config = yaml.load(f)
+
     path = config['kitti_path']
     epochs = config['epochs']
     batches = config['batches']
-    bins = config['bins']
+    bins = config['bins'] # important
     alpha = config['alpha']
     w = config['w']
 
@@ -470,18 +517,20 @@ def main():
         model.eval()
 
 
-
-
     img_data = Dataset.MyImageDataset(os.path.abspath(os.path.dirname(__file__)) + '/eval')
     data = Dataset.MyBatchDataset(img_data, batches, bins, mode = 'eval')
 
+    angle_bins = generate_angle_bins(bins)
+
+    # ???
     # for i in range(data.num_of_patch):
     # angle = info['LocalAngle'] / np.pi * 180
-    # Ry = info['Ry'] # ????
+    # Ry = info['Ry']
 
+    # main loop through the images
 
-    for img_idx in range(0,data.num_images): # through the images
-        # get the raw image, for visualization purposes
+    for img_idx in range(0,data.num_images):
+
         img_ID = img_data[img_idx]['ID']
 
         # single mode, image name is passed in
@@ -490,17 +539,21 @@ def main():
                 continue
 
         calib_file = os.path.abspath(os.path.dirname(__file__)) + '/eval/calib/%s.txt' % img_ID
-        truth_img = draw_truth_boxes(img_idx,img_data, calib_file)
 
+        truth_img = draw_truth_boxes(img_idx, img_data, calib_file)
         img = img_data.GetRawImage(img_idx)
-        # batches is the all objects in image, cropped
-        batches, centerAngles, infos = data.formatForModel(img_idx)
 
-
+        # batches is the all objects in image, cropped, i.e. crop with just a car
+        # loop through each object in image
+        batches, infos = data.formatForModel(img_idx)
         for i, batch in enumerate(batches):
-            info = infos[i]
+            # get 2d box and class from label, should be all we need in eval
+            info = infos[i] # this should be better for eval
+            obj_class = info['Class']
+            box_2d = info['Box_2D']
 
-            if info['Class'] == 'DontCare':
+
+            if obj_class == 'DontCare':
                 continue
 
             # create tensor
@@ -512,51 +565,48 @@ def main():
             conf = conf.cpu().data.numpy()[0, :]
             dim = dim.cpu().data.numpy()[0, :]
 
-
-            # wtf is this for????
+            # How this works:
+            # the net outputs the angle relative to a bin of angles, as defined
+            # by the number of bins in the config file, so take the bin
+            # with the highest confidence and use that as the angle
             argmax = np.argmax(conf)
             orient_max = orient[argmax, :]
             cos = orient_max[0]
             sin = orient_max[1]
-            theta = np.arctan2(sin, cos) / np.pi * 180
-            theta = theta + centerAngles[0][argmax] / np.pi * 180
-            theta = 360 - info['ThetaRay'] - theta
-            if theta > 0: theta -= int(theta / 360) * 360
-            elif theta < 0: theta += (int(-theta / 360) + 1) * 360
+            theta = np.arctan2(sin, cos) # should be radians, but double check
+            theta = theta + angle_bins[argmax]
 
+            theta_ray = calc_theta_ray(box_2d) # get horiz angle to the center of this box
+            # theta = theta + theta_ray
 
-            # print(orient)
-            # print(orient_max)
-            # print(theta)
-            # print '---'
+            theta = 360 - info['ThetaRay'] - theta # this should be done with math on pixel center of box
+
+            # why format like this?
+            # if theta > 0: theta -= int(theta / 360) * 360
+            # elif theta < 0: theta += (int(-theta / 360) + 1) * 36
+
+            # why this?
             Ry = info['Ry']
             if Ry > 0: Ry -= int(Ry / 360) * 360
             elif Ry < 0: Ry += (int(-Ry / 360) + 1) * 360
-            # print(Ry)
-            # exit()
 
-
-            # format to pass into *math* functions and visualize
-            net_output = {}
-            net_output['Box_2D'] = info['Box_2D'] # from label, will eventually be from yolo
-
-            net_output['Orientation'] = orient
-            net_output['Dimension'] = dim
+            # format outputs
+            net_output = format_net_output(box_2d, orient, dim)
 
             # project 3d into 2d to visualize
-            # img = img_data.GetImage(0)
             img = plot_regressed_3d_bbox(img, net_output, calib_file, info)
 
+    # single image
     # cv2.imshow('Net output', img)
     # cv2.waitKey(0)
 
+        # put truth image on top
         numpy_vertical = np.concatenate((truth_img, img), axis=0)
         cv2.imshow('Truth on top, Prediction on bottom for image', numpy_vertical)
         cv2.waitKey(0)
         # cv2.destroyAllWindows()
 
 
-    # exit()
 
 if __name__ == '__main__':
     main()
