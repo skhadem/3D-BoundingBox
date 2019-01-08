@@ -317,6 +317,11 @@ Goals:
     (see num_of_patch lol)
     - change up the data structure, want to have dict for image id, with arrays
     of labels inside. Should make for more intuitave looping on the other end.
+
+Notes:
+    - The center angles are the same for everything, so why define it here?
+        Will be defined in the main function that uses this dataset
+
 """
 class MyBatchDataset:
     def __init__(self, imgDataset, batchSize = 1, bins = 3, overlap = 25/180.0 * np.pi, mode='train'):
@@ -328,7 +333,8 @@ class MyBatchDataset:
         self.mode = mode
         self.imgID = None
 
-        # what is happening here
+        # create bins of angles
+        # will not be used here, can delete eventually
         centerAngle = np.zeros(bins)
         interval = 2 * np.pi / bins
         for i in range(1, bins):
@@ -519,7 +525,8 @@ class MyBatchDataset:
         #     else:
         #         self.idx = 35570
 
-        return batches, centerAngles, infos
+        # return batches, centerAngles, infos
+        return batches, infos
 
 
         """
