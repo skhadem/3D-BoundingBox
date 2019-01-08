@@ -380,7 +380,8 @@ def plot_regressed_3d_bbox(img, net_output, calib_file, label):
     cv2.line(img, pt4, pt1, cv_colors.BLUE.value, 2)
 
     # for now visualize truth pose, soon this should come from the calculated center
-    plot_3d(img, calib_file, truth_orient, truth_dims, truth_pose) # 3d boxes
+    # plot_3d(img, calib_file, truth_orient, truth_dims, truth_pose) # 3d boxes
+    plot_3d(img, calib_file, truth_orient, truth_dims, center) # 3d boxes
 
     # plot the corners that were used
     # these corners returned are the ones that are unrotated, because they were
