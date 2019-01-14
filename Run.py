@@ -19,6 +19,7 @@ Plan:
 
 Random TODOs:
 
+[ ] loops inside of plotting functions
 [ ] Move alot of functions to a library and import it
 
 
@@ -26,7 +27,7 @@ Notes:
 
 - The net outputs an angle (actually a sin and cos) relative to an angle defined
     by the # of bins, thus the # of bins used to train model should be known
-- Everything should be using radians, just for consistancy
+- Everything should be using radians, just for consistancy (old version used degrees, so careful!)
 - Is class ever used? Could this be an improvement?
 
 """
@@ -69,6 +70,15 @@ def get_calibration_cam_to_image(cab_f):
             # cam_to_img[:,3] = 1
             return cam_to_img
 
+def get_K(cab_f):
+    for line in open(cab_f):
+        if 'K_02' in line:
+            cam_K = line.strip().split(' ')
+            cam_K = np.asarray([float(cam_K) for cam_K in cam_K[1:]])
+            return_matrix = np.zeros((3,4))
+            return_matrix[:,:-1] = cam_K.reshape((3,3))
+
+    return return_matrix
 
 def get_R0(cab_f):
     for line in open(cab_f):
@@ -138,8 +148,12 @@ def rotation_matrix(yaw, pitch=0, roll=0):
 # calib is a 3x4 matrix, box_2d is [(xmin, ymin), (xmax, ymax)]
 # Math help: http://ywpkwon.github.io/pdf/bbox3d-study.pdf
 def calc_location(orient, dimension, calib, box_2d):
-    # variables with same names as the equation
-    K = calib
+
+    K = calib # actually P, but works ok
+
+    # this one didn't work well
+    # K = get_K(os.path.abspath(os.path.dirname(__file__)) + '/eval/calib/calib_cam_to_cam.txt')
+
     R = rotation_matrix(orient)
 
     # format 2d corners
@@ -151,8 +165,6 @@ def calc_location(orient, dimension, calib, box_2d):
 
     box_corners = [xmin, ymin, xmax, ymax]
 
-    corners = create_corners(dimension)
-
     # need to get 64 possibilities for the order (xmin, ymin, xmax, ymax)
     # this should be 64 long, each possibility has 4 3d points
     # [ [ [3D corner for xmin], [for ymin] ... x4 ], ... x64 ]
@@ -160,11 +172,54 @@ def calc_location(orient, dimension, calib, box_2d):
     # each vertical side of the 2D detection box can correspond to [+/- dx/2, . , +/- dz/2]
     # each horizontal side of the 2D detection box can correspond to [., +/- dx , +/- dz/2]
     # this gives 256, which ones to remove for zero pitch/roll ?
-    # TODO:How to do this??
-    constraints = [[] for i in range(64)]
+    # TODO:How to do this correctly
 
-    # for now, use all 4096 possible
-    constraints = list(itertools.product(corners, repeat=4))
+    # for now, splitting into left, right, top, bottom of box
+    # 4^4 = 256 combinations
+
+    constraints = []
+
+    left_constraints = []
+    right_constraints = []
+    top_constraints = []
+    bottom_constraints = []
+
+    # using a different coord system
+    dx = dimension[2] / 2
+    dy = dimension[0] / 2
+    dz = dimension[1] / 2
+
+    for i in (-1,1):
+        for j in (-1,1):
+            left_constraints.append([i*dx, j*dy, -dz])
+
+    for i in (-1,1):
+        for j in (-1,1):
+            right_constraints.append([i*dx, j*dy, dz])
+
+    for i in (-1,1):
+        for j in (-1,1):
+            top_constraints.append([i*dx, -dy, j*dz])
+
+    for i in (-1,1):
+        for j in (-1,1):
+            bottom_constraints.append([i*dx, dy, j*dz])
+
+    # car is facing opposite way, swap left/ right
+    if orient < 0:
+        temp = left_constraints
+        left_constraints = right_constraints
+        right_constraints = temp
+
+    # 256 combinations
+    for left in left_constraints:
+        for top in top_constraints:
+            for right in right_constraints:
+                for bottom in bottom_constraints:
+                    constraints.append([left, top, right, bottom])
+
+    # filter out the ones with repeats
+    constraints = filter(lambda x: len(x) == len(set(tuple(i) for i in x)), constraints)
 
     # create pre M (the term with I and the R*X)
     pre_M = np.zeros([4,4])
@@ -203,6 +258,7 @@ def calc_location(orient, dimension, calib, box_2d):
                 break
 
         if repeat:
+            print ("REPEAT")
             continue
 
         M_array = [Ma, Mb, Mc, Md]
@@ -229,6 +285,7 @@ def calc_location(orient, dimension, calib, box_2d):
         loc, error, rank, s = np.linalg.lstsq(A, b)
 
         # found a better estimation
+
         if error < best_error:
             count += 1 # for debugging
             best_loc = loc
@@ -236,6 +293,7 @@ def calc_location(orient, dimension, calib, box_2d):
             best_X = X_array
 
     # print count
+    # print best_error
 
     return best_loc, best_X
 
@@ -305,7 +363,6 @@ def plot_3d_pts(img, pts, center, calib_file=None, cam_to_img=None, relative=Fal
 
         cv2.circle(img, (point[0], point[1]), 3, cv_colors.RED.value, thickness=-1)
 
-
 def plot_3d(img, calib_file, ry, dimension, center):
 
     cam_to_img = get_calibration_cam_to_image(calib_file)
@@ -326,7 +383,7 @@ def plot_3d(img, calib_file, ry, dimension, center):
 
         box_3d.append(point)
 
-    # need to put into loop
+    #TODO put into loop
 
     cv2.line(img, (box_3d[0][0], box_3d[0][1]), (box_3d[2][0],box_3d[2][1]), cv_colors.GREEN.value, 1)
     cv2.line(img, (box_3d[4][0], box_3d[4][1]), (box_3d[6][0],box_3d[6][1]), cv_colors.GREEN.value, 1)
@@ -342,16 +399,18 @@ def plot_3d(img, calib_file, ry, dimension, center):
         cv2.line(img, (box_3d[i][0], box_3d[i][1]), (box_3d[i+1][0],box_3d[i+1][1]), cv_colors.GREEN.value, 1)
 
 
-
     # TODO: put in loop
-    front_mark = []
-    front_mark.append((box_3d[1][0], box_3d[1][1]))
-    front_mark.append((box_3d[2][0], box_3d[2][1]))
-    front_mark.append((box_3d[0][0], box_3d[0][1]))
-    front_mark.append((box_3d[3][0], box_3d[3][1]))
+    # front_mark = []
+    # front_mark.append((box_3d[0][0], box_3d[0][1]))
+    # front_mark.append((box_3d[1][0], box_3d[1][1]))
+    # front_mark.append((box_3d[2][0], box_3d[2][1]))
+    # front_mark.append((box_3d[3][0], box_3d[3][1]))
 
-    cv2.line(img, front_mark[0], front_mark[1], cv_colors.BLUE.value, 1)
-    cv2.line(img, front_mark[2], front_mark[3], cv_colors.BLUE.value, 1)
+    front_mark = [(box_3d[i][0], box_3d[i][1]) for i in range(4)]
+
+
+    cv2.line(img, front_mark[0], front_mark[3], cv_colors.BLUE.value, 1)
+    cv2.line(img, front_mark[1], front_mark[2], cv_colors.BLUE.value, 1)
 
 def plot_2d_box(img, box_2d):
     # create a square from the corners
@@ -366,7 +425,7 @@ def plot_2d_box(img, box_2d):
 
 # plot from net output. The orient should be global
 # after done testing math, can remove label param
-def plot_regressed_3d_bbox(img, net_output, calib_file, label):
+def plot_regressed_3d_bbox(img, net_output, calib_file, label, truth_img):
     cam_to_img = get_calibration_cam_to_image(calib_file)
     box_2d = net_output['Box_2D']
 
@@ -395,7 +454,7 @@ def plot_regressed_3d_bbox(img, net_output, calib_file, label):
     print truth_pose
     print "-------------"
 
-    plot_2d_box(img, box_2d)
+    plot_2d_box(truth_img, box_2d)
 
     # for now visualize truth pose, soon this should come from the calculated center
     # plot_3d(img, calib_file, truth_orient, truth_dims, truth_pose) # 3d boxes
@@ -410,29 +469,26 @@ def plot_regressed_3d_bbox(img, net_output, calib_file, label):
 
     corner_indexes = [corners.index(i) for i in X] # get indexes
 
-
     # get the rotated version
     R = rotation_matrix(truth_orient)
     corners = create_corners(truth_dims, location=truth_pose, R=R)
     corners_used = [corners[i] for i in corner_indexes]
 
     # plot
-    plot_3d_pts(img, corners_used, truth_pose, cam_to_img=cam_to_img, relative=False)
+    plot_3d_pts(truth_img, corners_used, truth_pose, cam_to_img=cam_to_img, relative=False)
 
     return img
 
 # From KITTI : x = P2 * R0_rect * Tr_velo_to_cam * y
 # Velodyne coords
 def plot_truth_3d_bbox(img, label_info, calib_file):
-    alpha = label_info['Ry']
+    Ry = label_info['Ry']
     dims = label_info['Dimension']
     center = label_info['Location']
 
-    plot_3d(img, calib_file, alpha, dims, center)
+    plot_3d(img, calib_file, Ry, dims, center)
 
     return img
-
-
 
 def draw_truth_boxes(img_idx, img_dataset, calib_file):
     # visualize with truth data
@@ -440,12 +496,10 @@ def draw_truth_boxes(img_idx, img_dataset, calib_file):
 
     info = img_dataset[img_idx]['Label']
 
-
     for item in info:
         if item['Class'] == 'DontCare':
             continue
         img = plot_truth_3d_bbox(img, item, calib_file)
-
 
     return img
 
@@ -485,7 +539,6 @@ def main():
     except:
         single_img_id = False
 
-
     # get models
     store_path = os.path.abspath(os.path.dirname(__file__)) + '/models'
     if not os.path.isdir(store_path):
@@ -523,11 +576,6 @@ def main():
 
     angle_bins = generate_angle_bins(bins)
 
-    # ???
-    # for i in range(data.num_of_patch):
-    # angle = info['LocalAngle'] / np.pi * 180
-    # Ry = info['Ry']
-
     # main loop through the images
 
     for img_idx in range(0,data.num_images):
@@ -552,7 +600,6 @@ def main():
             info = infos[i] # this should be better for eval
             obj_class = info['Class']
             box_2d = info['Box_2D']
-
 
             if obj_class == 'DontCare':
                 continue
@@ -595,7 +642,7 @@ def main():
             net_output = format_net_output(box_2d, orient, dim)
 
             # project 3d into 2d to visualize
-            img = plot_regressed_3d_bbox(img, net_output, calib_file, info)
+            img = plot_regressed_3d_bbox(img, net_output, calib_file, info, truth_img)
 
     # single image
     # cv2.imshow('Net output', img)
