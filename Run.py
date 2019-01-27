@@ -32,6 +32,7 @@ Notes:
 
 """
 
+single_car = True
 
 import os
 import sys
@@ -58,6 +59,20 @@ class cv_colors(Enum):
     RED = (0,0,255)
     GREEN = (0,255,0)
     BLUE = (255,0,0)
+    PURPLE = (247,44,200)
+    ORANGE = (44,162,247)
+    MINT = (239,255,66)
+    YELLOW = (2,255,250)
+
+def constraint_to_color(constraint_idx):
+    return {
+        0 : cv_colors.PURPLE.value, #left
+        1 : cv_colors.ORANGE.value, #top
+        2 : cv_colors.MINT.value, #right
+        3 : cv_colors.YELLOW.value #bottom
+    }[constraint_idx]
+
+
 
 # read camera cal file and get intrinsic params
 # this is actually the projection matrix
@@ -147,7 +162,7 @@ def rotation_matrix(yaw, pitch=0, roll=0):
 # orientation is car's local yaw angle ?, dimension is a 1x3 vector
 # calib is a 3x4 matrix, box_2d is [(xmin, ymin), (xmax, ymax)]
 # Math help: http://ywpkwon.github.io/pdf/bbox3d-study.pdf
-def calc_location(orient, dimension, calib, box_2d):
+def calc_location(orient, dimension, calib, box_2d, alpha):
 
     K = calib # actually P, but works ok
 
@@ -162,21 +177,10 @@ def calc_location(orient, dimension, calib, box_2d):
     xmax = box_2d[1][0]
     ymax = box_2d[1][1]
 
-
+    # left top right bottom
     box_corners = [xmin, ymin, xmax, ymax]
 
-    # need to get 64 possibilities for the order (xmin, ymin, xmax, ymax)
-    # this should be 64 long, each possibility has 4 3d points
-    # [ [ [3D corner for xmin], [for ymin] ... x4 ], ... x64 ]
-    # from paper:
-    # each vertical side of the 2D detection box can correspond to [+/- dx/2, . , +/- dz/2]
-    # each horizontal side of the 2D detection box can correspond to [., +/- dx , +/- dz/2]
-    # this gives 256, which ones to remove for zero pitch/roll ?
-    # TODO:How to do this correctly
-
-    # for now, splitting into left, right, top, bottom of box
-    # 4^4 = 256 combinations
-
+    # get the point constraints
     constraints = []
 
     left_constraints = []
@@ -189,29 +193,47 @@ def calc_location(orient, dimension, calib, box_2d):
     dy = dimension[0] / 2
     dz = dimension[1] / 2
 
-    for i in (-1,1):
-        for j in (-1,1):
-            left_constraints.append([i*dx, j*dy, -dz])
+    # below is very based on trial and error
 
-    for i in (-1,1):
-        for j in (-1,1):
-            right_constraints.append([i*dx, j*dy, dz])
+    # based on the relative angle, a different configuration occurs
+    # negative is back of car, positive is front
+    left_mult = 1
+    right_mult = -1
 
+    # about straight on but opposite way
+    if alpha < np.deg2rad(92) and alpha > np.deg2rad(88):
+        left_mult = 1
+        right_mult = 1
+    # about straight on and same way
+    elif alpha < np.deg2rad(-88) and alpha > np.deg2rad(-92):
+        left_mult = -1
+        right_mult = -1
+    # this works but doesnt make much sense
+    elif alpha < np.deg2rad(90) and alpha > -np.deg2rad(90):
+        left_mult = -1
+        right_mult = 1
+
+    # if the car is facing the oppositeway, switch left and right
+    switch_mult = -1
+    if alpha > 0:
+        switch_mult = 1
+
+    # left and right could either be the front of the car ot the back of the car
+    # careful to use left and right based on image, no of actual car's left and right
+    for i in (-1,1):
+        left_constraints.append([left_mult * dx, i*dy, -switch_mult * dz])
+    for i in (-1,1):
+        right_constraints.append([right_mult * dx, i*dy, switch_mult * dz])
+
+    # top and bottom are easy, just the top and bottom of car
     for i in (-1,1):
         for j in (-1,1):
             top_constraints.append([i*dx, -dy, j*dz])
-
     for i in (-1,1):
         for j in (-1,1):
             bottom_constraints.append([i*dx, dy, j*dz])
 
-    # car is facing opposite way, swap left/ right
-    if orient < 0:
-        temp = left_constraints
-        left_constraints = right_constraints
-        right_constraints = temp
-
-    # 256 combinations
+    # now, 64 combinations
     for left in left_constraints:
         for top in top_constraints:
             for right in right_constraints:
@@ -249,18 +271,6 @@ def calc_location(orient, dimension, calib, box_2d):
         Mc = np.copy(pre_M)
         Md = np.copy(pre_M)
 
-        # we don't want ones with the 4 of the same corners
-        repeat = False
-        test_x = list(itertools.combinations(X_array, 2))
-        for x in test_x:
-            if x[0] == x[1]:
-                repeat = True
-                break
-
-        if repeat:
-            print ("REPEAT")
-            continue
-
         M_array = [Ma, Mb, Mc, Md]
 
         # create A, b
@@ -296,6 +306,8 @@ def calc_location(orient, dimension, calib, box_2d):
     # print best_error
 
     return best_loc, best_X
+    # return best_loc, [left_constraints, right_constraints]
+
 
 # option to rotate and shift (for label info)
 def create_corners(dimension, location=None, R=None):
@@ -351,7 +363,7 @@ def project_3d_pt(pt, cam_to_img, calib_file=None):
     return point
 
 # take in 3d points and plot them on image as red circles
-def plot_3d_pts(img, pts, center, calib_file=None, cam_to_img=None, relative=False):
+def plot_3d_pts(img, pts, center, calib_file=None, cam_to_img=None, relative=False, constraint_idx=None):
     if calib_file is not None:
         cam_to_img = get_calibration_cam_to_image(calib_file)
 
@@ -361,7 +373,12 @@ def plot_3d_pts(img, pts, center, calib_file=None, cam_to_img=None, relative=Fal
 
         point = project_3d_pt(pt, cam_to_img)
 
-        cv2.circle(img, (point[0], point[1]), 3, cv_colors.RED.value, thickness=-1)
+        color = cv_colors.RED.value
+
+        if constraint_idx is not None:
+            color = constraint_to_color(constraint_idx)
+
+        cv2.circle(img, (point[0], point[1]), 3, color, thickness=-1)
 
 def plot_3d(img, calib_file, ry, dimension, center):
 
@@ -377,14 +394,11 @@ def plot_3d(img, calib_file, ry, dimension, center):
     # plot_3d_pts(img, corners, center,cam_to_img=cam_to_img, relative=False)
 
     box_3d = []
-
     for corner in corners:
         point = project_3d_pt(corner, cam_to_img)
-
         box_3d.append(point)
 
     #TODO put into loop
-
     cv2.line(img, (box_3d[0][0], box_3d[0][1]), (box_3d[2][0],box_3d[2][1]), cv_colors.GREEN.value, 1)
     cv2.line(img, (box_3d[4][0], box_3d[4][1]), (box_3d[6][0],box_3d[6][1]), cv_colors.GREEN.value, 1)
     cv2.line(img, (box_3d[0][0], box_3d[0][1]), (box_3d[4][0],box_3d[4][1]), cv_colors.GREEN.value, 1)
@@ -398,16 +412,7 @@ def plot_3d(img, calib_file, ry, dimension, center):
     for i in range(0,7,2):
         cv2.line(img, (box_3d[i][0], box_3d[i][1]), (box_3d[i+1][0],box_3d[i+1][1]), cv_colors.GREEN.value, 1)
 
-
-    # TODO: put in loop
-    # front_mark = []
-    # front_mark.append((box_3d[0][0], box_3d[0][1]))
-    # front_mark.append((box_3d[1][0], box_3d[1][1]))
-    # front_mark.append((box_3d[2][0], box_3d[2][1]))
-    # front_mark.append((box_3d[3][0], box_3d[3][1]))
-
     front_mark = [(box_3d[i][0], box_3d[i][1]) for i in range(4)]
-
 
     cv2.line(img, front_mark[0], front_mark[3], cv_colors.BLUE.value, 1)
     cv2.line(img, front_mark[1], front_mark[2], cv_colors.BLUE.value, 1)
@@ -442,7 +447,7 @@ def plot_regressed_3d_bbox(img, net_output, calib_file, label, truth_img):
     truth_orient = label['Ry']
 
     # the math! returns X, the corners used for constraint
-    center, X = calc_location(truth_orient, truth_dims, cam_to_img, box_2d)
+    center, X = calc_location(truth_orient, truth_dims, cam_to_img, box_2d, label['Alpha'])
 
     center = [center[0][0], center[1][0], center[2][0]]
 
@@ -454,6 +459,7 @@ def plot_regressed_3d_bbox(img, net_output, calib_file, label, truth_img):
     print truth_pose
     print "-------------"
 
+    plot_2d_box(img, box_2d)
     plot_2d_box(truth_img, box_2d)
 
     # for now visualize truth pose, soon this should come from the calculated center
@@ -465,17 +471,50 @@ def plot_regressed_3d_bbox(img, net_output, calib_file, label, truth_img):
     # in the calculation. We must find the indicies of the corners used, then generate
     # the roated corners and visualize those
 
+    left = X[0]
+    right = X[1]
+
+
+    # DEBUG with left and right
+    # corners = create_corners(truth_dims) # unrotated
+    #
+    # left_corner_indexes = [corners.index(i) for i in left] # get indexes
+    # right_corner_indexes = [corners.index(i) for i in right] # get indexes
+    #
+    # # get the rotated version
+    # R = rotation_matrix(truth_orient)
+    # # corners = create_corners(truth_dims, location=center, R=R)
+    # # corners_used = [corners[i] for i in corner_indexes]
+    # #
+    # # # plot
+    # # plot_3d_pts(img, corners_used, truth_pose, cam_to_img=cam_to_img, relative=False)
+    #
+    # corners = create_corners(truth_dims, location=truth_pose, R=R)
+    # left_corners_used = [corners[i] for i in left_corner_indexes]
+    # right_corners_used = [corners[i] for i in right_corner_indexes]
+    #
+    # # plot
+    # for i, pt in enumerate(left_corners_used):
+    #     plot_3d_pts(truth_img, [pt], truth_pose, cam_to_img=cam_to_img, relative=False, constraint_idx=0)
+    #
+    # for i, pt in enumerate(right_corners_used):
+    #     plot_3d_pts(truth_img, [pt], truth_pose, cam_to_img=cam_to_img, relative=False, constraint_idx=2)
+
+
+    # the 4 corners used
     corners = create_corners(truth_dims) # unrotated
 
     corner_indexes = [corners.index(i) for i in X] # get indexes
 
     # get the rotated version
     R = rotation_matrix(truth_orient)
+
     corners = create_corners(truth_dims, location=truth_pose, R=R)
     corners_used = [corners[i] for i in corner_indexes]
 
     # plot
-    plot_3d_pts(truth_img, corners_used, truth_pose, cam_to_img=cam_to_img, relative=False)
+    for i, pt in enumerate(corners_used):
+        plot_3d_pts(truth_img, [pt], truth_pose, cam_to_img=cam_to_img, relative=False, constraint_idx=i)
 
     return img
 
@@ -638,20 +677,34 @@ def main():
             if Ry > 0: Ry -= int(Ry / 360) * 360
             elif Ry < 0: Ry += (int(-Ry / 360) + 1) * 360
 
+
+
             # format outputs
             net_output = format_net_output(box_2d, orient, dim)
 
+            # if i != 4:
+            #     continue
+
             # project 3d into 2d to visualize
             img = plot_regressed_3d_bbox(img, net_output, calib_file, info, truth_img)
+
+            if single_car:
+                numpy_vertical = np.concatenate((truth_img, img), axis=0)
+                cv2.imshow('Truth on top, Prediction on bottom for image', numpy_vertical)
+                cv2.waitKey(0)
+
+
+
 
     # single image
     # cv2.imshow('Net output', img)
     # cv2.waitKey(0)
 
         # put truth image on top
-        numpy_vertical = np.concatenate((truth_img, img), axis=0)
-        cv2.imshow('Truth on top, Prediction on bottom for image', numpy_vertical)
-        cv2.waitKey(0)
+        if not single_car:
+            numpy_vertical = np.concatenate((truth_img, img), axis=0)
+            cv2.imshow('Truth on top, Prediction on bottom for image', numpy_vertical)
+            cv2.waitKey(0)
         # cv2.destroyAllWindows()
 
 
