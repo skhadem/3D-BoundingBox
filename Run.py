@@ -11,7 +11,7 @@ Big Picture:
 Plan:
 
 [x] reformat data structure to understand it better
-[ ] use purely truth values from label for dimension and orient to test math
+[x] use purely truth values from label for dimension and orient to test math
 [ ] use the label 2d_box to get dimension and orient from net
 [ ] use yolo or rcnn to get the 2d box and class, so run from just an image (and cal)
 [ ] Try and optimize to be able to run on video
@@ -32,7 +32,10 @@ Notes:
 
 """
 
+# some global debug options
 single_car = True
+debug_corners = True
+
 
 import os
 import sys
@@ -48,396 +51,20 @@ import random
 
 import Model
 import Dataset
-
+from library.Plotting import *
+from library.File import *
 
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from torchvision.models import vgg
 
-class cv_colors(Enum):
-    RED = (0,0,255)
-    GREEN = (0,255,0)
-    BLUE = (255,0,0)
-    PURPLE = (247,44,200)
-    ORANGE = (44,162,247)
-    MINT = (239,255,66)
-    YELLOW = (2,255,250)
-
-def constraint_to_color(constraint_idx):
-    return {
-        0 : cv_colors.PURPLE.value, #left
-        1 : cv_colors.ORANGE.value, #top
-        2 : cv_colors.MINT.value, #right
-        3 : cv_colors.YELLOW.value #bottom
-    }[constraint_idx]
-
-
-
-# read camera cal file and get intrinsic params
-# this is actually the projection matrix
-def get_calibration_cam_to_image(cab_f):
-    for line in open(cab_f):
-        if 'P2:' in line:
-            cam_to_img = line.strip().split(' ')
-            cam_to_img = np.asarray([float(number) for number in cam_to_img[1:]])
-            cam_to_img = np.reshape(cam_to_img, (3, 4))
-            # cam_to_img[:,3] = 1
-            return cam_to_img
-
-def get_K(cab_f):
-    for line in open(cab_f):
-        if 'K_02' in line:
-            cam_K = line.strip().split(' ')
-            cam_K = np.asarray([float(cam_K) for cam_K in cam_K[1:]])
-            return_matrix = np.zeros((3,4))
-            return_matrix[:,:-1] = cam_K.reshape((3,3))
-
-    return return_matrix
-
-def get_R0(cab_f):
-    for line in open(cab_f):
-        if 'R0_rect:' in line:
-            R0 = line.strip().split(' ')
-            R0 = np.asarray([float(number) for number in R0[1:]])
-            R0 = np.reshape(R0, (3, 3))
-
-            R0_rect = np.zeros([4,4])
-            R0_rect[3,3] = 1
-            R0_rect[:3,:3] = R0
-
-            return R0_rect
-
-def get_tr_to_velo(cab_f):
-    for line in open(cab_f):
-        if 'Tr_velo_to_cam:' in line:
-            Tr = line.strip().split(' ')
-            Tr = np.asarray([float(number) for number in Tr[1:]])
-            Tr = np.reshape(Tr, (3, 4))
-
-            Tr_to_velo = np.zeros([4,4])
-            Tr_to_velo[3,3] = 1
-            Tr_to_velo[:3,:4] = Tr
-
-            return Tr_to_velo
-
-
-# from the 2 corners, return the 4 corners of a box in CCW order
-# coulda just used cv2.rectangle haha
-def create_2d_box(box_2d):
-    corner1_2d = box_2d[0]
-    corner2_2d = box_2d[1]
-
-    pt1 = corner1_2d
-    pt2 = (corner1_2d[0], corner2_2d[1])
-    pt3 = corner2_2d
-    pt4 = (corner2_2d[0], corner1_2d[1])
-
-    return pt1, pt2, pt3, pt4
-
-
-# need to double check the coordinate system used, I believe it is from camera coords
-# using this math: https://en.wikipedia.org/wiki/Rotation_matrix
-def rotation_matrix(yaw, pitch=0, roll=0):
-    # print yaw
-    tx = roll
-    ty = yaw
-    tz = pitch
-
-    # from net:
-    # yaw comes out of the net as a 2x2, seems to be confidence and angle?
-    # get angle of highest confidence, (rad2deg?)
-    # tz = yaw[np.argmax(yaw[:,0]), :][1]
-
-    Rx = np.array([[1,0,0], [0, np.cos(tx), -np.sin(tx)], [0, np.sin(tx), np.cos(tx)]])
-    Ry = np.array([[np.cos(ty), 0, np.sin(ty)], [0, 1, 0], [-np.sin(ty), 0, np.cos(ty)]])
-    Rz = np.array([[np.cos(tz), -np.sin(tz), 0], [np.sin(tz), np.cos(tz), 0], [0,0,1]])
-
-
-    return Ry.reshape([3,3]) # do we use this ?
-    # return np.dot(np.dot(Rz,Ry), Rx)
-
-
-# this should be based on the paper. Math!
-# orientation is car's local yaw angle ?, dimension is a 1x3 vector
-# calib is a 3x4 matrix, box_2d is [(xmin, ymin), (xmax, ymax)]
-# Math help: http://ywpkwon.github.io/pdf/bbox3d-study.pdf
-def calc_location(orient, dimension, calib, box_2d, alpha):
-
-    K = calib # actually P, but works ok
-
-    # this one didn't work well
-    # K = get_K(os.path.abspath(os.path.dirname(__file__)) + '/eval/calib/calib_cam_to_cam.txt')
-
-    R = rotation_matrix(orient)
-
-    # format 2d corners
-    xmin = box_2d[0][0]
-    ymin = box_2d[0][1]
-    xmax = box_2d[1][0]
-    ymax = box_2d[1][1]
-
-    # left top right bottom
-    box_corners = [xmin, ymin, xmax, ymax]
-
-    # get the point constraints
-    constraints = []
-
-    left_constraints = []
-    right_constraints = []
-    top_constraints = []
-    bottom_constraints = []
-
-    # using a different coord system
-    dx = dimension[2] / 2
-    dy = dimension[0] / 2
-    dz = dimension[1] / 2
-
-    # below is very based on trial and error
-
-    # based on the relative angle, a different configuration occurs
-    # negative is back of car, positive is front
-    left_mult = 1
-    right_mult = -1
-
-    # about straight on but opposite way
-    if alpha < np.deg2rad(92) and alpha > np.deg2rad(88):
-        left_mult = 1
-        right_mult = 1
-    # about straight on and same way
-    elif alpha < np.deg2rad(-88) and alpha > np.deg2rad(-92):
-        left_mult = -1
-        right_mult = -1
-    # this works but doesnt make much sense
-    elif alpha < np.deg2rad(90) and alpha > -np.deg2rad(90):
-        left_mult = -1
-        right_mult = 1
-
-    # if the car is facing the oppositeway, switch left and right
-    switch_mult = -1
-    if alpha > 0:
-        switch_mult = 1
-
-    # left and right could either be the front of the car ot the back of the car
-    # careful to use left and right based on image, no of actual car's left and right
-    for i in (-1,1):
-        left_constraints.append([left_mult * dx, i*dy, -switch_mult * dz])
-    for i in (-1,1):
-        right_constraints.append([right_mult * dx, i*dy, switch_mult * dz])
-
-    # top and bottom are easy, just the top and bottom of car
-    for i in (-1,1):
-        for j in (-1,1):
-            top_constraints.append([i*dx, -dy, j*dz])
-    for i in (-1,1):
-        for j in (-1,1):
-            bottom_constraints.append([i*dx, dy, j*dz])
-
-    # now, 64 combinations
-    for left in left_constraints:
-        for top in top_constraints:
-            for right in right_constraints:
-                for bottom in bottom_constraints:
-                    constraints.append([left, top, right, bottom])
-
-    # filter out the ones with repeats
-    constraints = filter(lambda x: len(x) == len(set(tuple(i) for i in x)), constraints)
-
-    # create pre M (the term with I and the R*X)
-    pre_M = np.zeros([4,4])
-    # 1's down diagonal
-    for i in range(0,4):
-        pre_M[i][i] = 1
-
-    best_loc = None
-    best_error = [1e09]
-    best_X = None
-
-    # loop through each possible constraint, hold on to the best guess
-    # constraint will be 64 sets of 4 corners
-    count = 0
-    for constraint in constraints:
-        # each corner
-        Xa = constraint[0]
-        Xb = constraint[1]
-        Xc = constraint[2]
-        Xd = constraint[3]
-
-        X_array = [Xa, Xb, Xc, Xd]
-
-        # M: all 1's down diagonal, and upper 3x1 is Rotation_matrix * [x, y, z]
-        Ma = np.copy(pre_M)
-        Mb = np.copy(pre_M)
-        Mc = np.copy(pre_M)
-        Md = np.copy(pre_M)
-
-        M_array = [Ma, Mb, Mc, Md]
-
-        # create A, b
-        A = np.zeros([4,3], dtype=np.float)
-        b = np.zeros([4,1])
-
-        indicies = [0,1,0,1]
-        for row, index in enumerate(indicies):
-            X = X_array[row]
-            M = M_array[row]
-
-            # create M for corner Xx
-            RX = np.dot(R, X)
-            M[:3,3] = RX.reshape(3)
-
-            M = np.dot(K, M)
-
-            A[row, :] = M[index,:3] - box_corners[row] * M[2,:3]
-            b[row] = box_corners[row] * M[2,3] - M[index,3]
-
-        # solve here with least squares, since over fit will get some error
-        loc, error, rank, s = np.linalg.lstsq(A, b)
-
-        # found a better estimation
-
-        if error < best_error:
-            count += 1 # for debugging
-            best_loc = loc
-            best_error = error
-            best_X = X_array
-
-    # print count
-    # print best_error
-
-    return best_loc, best_X
-    # return best_loc, [left_constraints, right_constraints]
-
-
-# option to rotate and shift (for label info)
-def create_corners(dimension, location=None, R=None):
-    dx = dimension[2] / 2
-    dy = dimension[0] / 2
-    dz = dimension[1] / 2
-
-    x_corners = []
-    y_corners = []
-    z_corners = []
-
-    for i in [1, -1]:
-        for j in [1,-1]:
-            for k in [1,-1]:
-                x_corners.append(dx*i)
-                y_corners.append(dy*j)
-                z_corners.append(dz*k)
-
-    corners = [x_corners, y_corners, z_corners]
-
-    # rotate if R is passed in
-    if R is not None:
-        corners = np.dot(R, corners)
-
-    # shift if location is passed in
-    if location is not None:
-        for i,loc in enumerate(location):
-            corners[i,:] = corners[i,:] + loc
-
-    final_corners = []
-    for i in range(8):
-        final_corners.append([corners[0][i], corners[1][i], corners[2][i]])
-
-
-    return final_corners
-
-# takes in a 3d point and projects it into 2d
-def project_3d_pt(pt, cam_to_img, calib_file=None):
-    if calib_file is not None:
-        cam_to_img = get_calibration_cam_to_image(calib_file)
-        R0_rect = get_R0(calib_file)
-        Tr_velo_to_cam = get_tr_to_velo(calib_file)
-
-    point = np.array(pt)
-    point = np.append(point, 1)
-
-    point = np.dot(cam_to_img, point)
-    # point = np.dot(np.dot(np.dot(cam_to_img, R0_rect), Tr_velo_to_cam), point)
-
-    point = point[:2]/point[2]
-    point = point.astype(np.int16)
-
-    return point
-
-# take in 3d points and plot them on image as red circles
-def plot_3d_pts(img, pts, center, calib_file=None, cam_to_img=None, relative=False, constraint_idx=None):
-    if calib_file is not None:
-        cam_to_img = get_calibration_cam_to_image(calib_file)
-
-    for pt in pts:
-        if relative:
-            pt = [i + center[j] for j,i in enumerate(pt)] # more pythonic
-
-        point = project_3d_pt(pt, cam_to_img)
-
-        color = cv_colors.RED.value
-
-        if constraint_idx is not None:
-            color = constraint_to_color(constraint_idx)
-
-        cv2.circle(img, (point[0], point[1]), 3, color, thickness=-1)
-
-def plot_3d(img, calib_file, ry, dimension, center):
-
-    cam_to_img = get_calibration_cam_to_image(calib_file)
-
-    # plot_3d_pts(img, [center], center, calib_file=calib_file, cam_to_img=cam_to_img)
-
-    R = rotation_matrix(ry)
-
-    corners = create_corners(dimension, location=center, R=R)
-
-    # to see the corners on image as red circles
-    # plot_3d_pts(img, corners, center,cam_to_img=cam_to_img, relative=False)
-
-    box_3d = []
-    for corner in corners:
-        point = project_3d_pt(corner, cam_to_img)
-        box_3d.append(point)
-
-    #TODO put into loop
-    cv2.line(img, (box_3d[0][0], box_3d[0][1]), (box_3d[2][0],box_3d[2][1]), cv_colors.GREEN.value, 1)
-    cv2.line(img, (box_3d[4][0], box_3d[4][1]), (box_3d[6][0],box_3d[6][1]), cv_colors.GREEN.value, 1)
-    cv2.line(img, (box_3d[0][0], box_3d[0][1]), (box_3d[4][0],box_3d[4][1]), cv_colors.GREEN.value, 1)
-    cv2.line(img, (box_3d[2][0], box_3d[2][1]), (box_3d[6][0],box_3d[6][1]), cv_colors.GREEN.value, 1)
-
-    cv2.line(img, (box_3d[1][0], box_3d[1][1]), (box_3d[3][0],box_3d[3][1]), cv_colors.GREEN.value, 1)
-    cv2.line(img, (box_3d[1][0], box_3d[1][1]), (box_3d[5][0],box_3d[5][1]), cv_colors.GREEN.value, 1)
-    cv2.line(img, (box_3d[7][0], box_3d[7][1]), (box_3d[3][0],box_3d[3][1]), cv_colors.GREEN.value, 1)
-    cv2.line(img, (box_3d[7][0], box_3d[7][1]), (box_3d[5][0],box_3d[5][1]), cv_colors.GREEN.value, 1)
-
-    for i in range(0,7,2):
-        cv2.line(img, (box_3d[i][0], box_3d[i][1]), (box_3d[i+1][0],box_3d[i+1][1]), cv_colors.GREEN.value, 1)
-
-    front_mark = [(box_3d[i][0], box_3d[i][1]) for i in range(4)]
-
-    cv2.line(img, front_mark[0], front_mark[3], cv_colors.BLUE.value, 1)
-    cv2.line(img, front_mark[1], front_mark[2], cv_colors.BLUE.value, 1)
-
-def plot_2d_box(img, box_2d):
-    # create a square from the corners
-    pt1, pt2, pt3, pt4 = create_2d_box(box_2d)
-
-    # plot the 2d box
-    cv2.line(img, pt1, pt2, cv_colors.BLUE.value, 2)
-    cv2.line(img, pt2, pt3, cv_colors.BLUE.value, 2)
-    cv2.line(img, pt3, pt4, cv_colors.BLUE.value, 2)
-    cv2.line(img, pt4, pt1, cv_colors.BLUE.value, 2)
-
-
 # plot from net output. The orient should be global
 # after done testing math, can remove label param
 def plot_regressed_3d_bbox(img, net_output, calib_file, label, truth_img):
     cam_to_img = get_calibration_cam_to_image(calib_file)
+    K = get_K(os.path.abspath(os.path.dirname(__file__)) + '/eval/calib/calib_cam_to_cam.txt')
     box_2d = net_output['Box_2D']
-
-    # center of 2d box
-    box_2d_center = [(box_2d[1][0] + box_2d[0][0]) / 2, (box_2d[1][1] + box_2d[0][1]) / 2]
-    # what is this compared to theta_ray, don't think it's necessary here
-    alpha = np.arctan(box_2d_center[0] / box_2d_center[1])
 
     dims = net_output['Dimension']
     orient = net_output['Orientation']
@@ -447,7 +74,7 @@ def plot_regressed_3d_bbox(img, net_output, calib_file, label, truth_img):
     truth_orient = label['Ry']
 
     # the math! returns X, the corners used for constraint
-    center, X = calc_location(truth_orient, truth_dims, cam_to_img, box_2d, label['Alpha'])
+    center, X = calc_location(truth_dims, cam_to_img, box_2d, label['Alpha'], net_output['ThetaRay'])
 
     center = [center[0][0], center[1][0], center[2][0]]
 
@@ -459,62 +86,64 @@ def plot_regressed_3d_bbox(img, net_output, calib_file, label, truth_img):
     print truth_pose
     print "-------------"
 
-    plot_2d_box(img, box_2d)
+    # plot_2d_box(img, box_2d)
     plot_2d_box(truth_img, box_2d)
 
-    # for now visualize truth pose, soon this should come from the calculated center
-    # plot_3d(img, calib_file, truth_orient, truth_dims, truth_pose) # 3d boxes
-    plot_3d(img, calib_file, truth_orient, truth_dims, center) # 3d boxes
+    plot_3d_box(img, cam_to_img, truth_orient, truth_dims, center) # 3d boxes
+
+
 
     # plot the corners that were used
     # these corners returned are the ones that are unrotated, because they were
     # in the calculation. We must find the indicies of the corners used, then generate
     # the roated corners and visualize those
 
-    left = X[0]
-    right = X[1]
+    if debug_corners:
+
+        left = X[0]
+        right = X[1]
+        # DEBUG with left and right as different colors
+        corners = create_corners(truth_dims) # unrotated
+
+        left_corner_indexes = [corners.index(i) for i in left] # get indexes
+        right_corner_indexes = [corners.index(i) for i in right] # get indexes
+
+        # get the rotated version
+        R = rotation_matrix(truth_orient)
+        # corners = create_corners(truth_dims, location=center, R=R)
+        # corners_used = [corners[i] for i in corner_indexes]
+        #
+        # # plot
+        # plot_3d_pts(img, corners_used, truth_pose, cam_to_img=cam_to_img, relative=False)
+
+        corners = create_corners(truth_dims, location=truth_pose, R=R)
+        left_corners_used = [corners[i] for i in left_corner_indexes]
+        right_corners_used = [corners[i] for i in right_corner_indexes]
+
+        # plot
+        for i, pt in enumerate(left_corners_used):
+            plot_3d_pts(truth_img, [pt], truth_pose, cam_to_img=cam_to_img, relative=False, constraint_idx=0)
+
+        for i, pt in enumerate(right_corners_used):
+            plot_3d_pts(truth_img, [pt], truth_pose, cam_to_img=cam_to_img, relative=False, constraint_idx=2)
+
+        plot_3d_box(truth_img, cam_to_img, truth_orient, truth_dims, truth_pose) # 3d boxes
 
 
-    # DEBUG with left and right
-    # corners = create_corners(truth_dims) # unrotated
-    #
-    # left_corner_indexes = [corners.index(i) for i in left] # get indexes
-    # right_corner_indexes = [corners.index(i) for i in right] # get indexes
-    #
-    # # get the rotated version
-    # R = rotation_matrix(truth_orient)
-    # # corners = create_corners(truth_dims, location=center, R=R)
-    # # corners_used = [corners[i] for i in corner_indexes]
-    # #
-    # # # plot
-    # # plot_3d_pts(img, corners_used, truth_pose, cam_to_img=cam_to_img, relative=False)
-    #
-    # corners = create_corners(truth_dims, location=truth_pose, R=R)
-    # left_corners_used = [corners[i] for i in left_corner_indexes]
-    # right_corners_used = [corners[i] for i in right_corner_indexes]
-    #
-    # # plot
-    # for i, pt in enumerate(left_corners_used):
-    #     plot_3d_pts(truth_img, [pt], truth_pose, cam_to_img=cam_to_img, relative=False, constraint_idx=0)
-    #
-    # for i, pt in enumerate(right_corners_used):
-    #     plot_3d_pts(truth_img, [pt], truth_pose, cam_to_img=cam_to_img, relative=False, constraint_idx=2)
-
-
-    # the 4 corners used
-    corners = create_corners(truth_dims) # unrotated
-
-    corner_indexes = [corners.index(i) for i in X] # get indexes
-
-    # get the rotated version
-    R = rotation_matrix(truth_orient)
-
-    corners = create_corners(truth_dims, location=truth_pose, R=R)
-    corners_used = [corners[i] for i in corner_indexes]
-
-    # plot
-    for i, pt in enumerate(corners_used):
-        plot_3d_pts(truth_img, [pt], truth_pose, cam_to_img=cam_to_img, relative=False, constraint_idx=i)
+        # the 4 corners used
+        # corners = create_corners(truth_dims) # unrotated
+        #
+        # corner_indexes = [corners.index(i) for i in X] # get indexes
+        #
+        # # get the rotated version
+        # R = rotation_matrix(truth_orient)
+        #
+        # corners = create_corners(truth_dims, location=truth_pose, R=R)
+        # corners_used = [corners[i] for i in corner_indexes]
+        #
+        # # plot
+        # for i, pt in enumerate(corners_used):
+        #     plot_3d_pts(truth_img, [pt], truth_pose, cam_to_img=cam_to_img, relative=False, constraint_idx=i)
 
     return img
 
@@ -529,11 +158,7 @@ def plot_truth_3d_bbox(img, label_info, calib_file):
 
     return img
 
-def draw_truth_boxes(img_idx, img_dataset, calib_file):
-    # visualize with truth data
-    img = img_dataset.GetRawImage(img_idx)
-
-    info = img_dataset[img_idx]['Label']
+def draw_truth_boxes(img, info, calib_file):
 
     for item in info:
         if item['Class'] == 'DontCare':
@@ -554,18 +179,34 @@ def generate_angle_bins(bins):
 
     return angle_bins
 
-#TODO: implement this:
+
 #https://math.stackexchange.com/questions/1320285/convert-a-pixel-displacement-to-angular-rotation
 # helpful:
 #https://stackoverflow.com/questions/39992968/how-to-calculate-field-of-view-of-the-camera-from-camera-intrinsic-matrix
-def calc_theta_ray(box_2d):
-    pass
+def calc_theta_ray(img, box_2d):
+    K = get_K(os.path.abspath(os.path.dirname(__file__)) + '/eval/calib/calib_cam_to_cam.txt')
+    width = img.shape[1]
+    fovx = 2 * np.arctan(width / (2 * K[0][0]))
+    center = (box_2d[1][0] + box_2d[0][0]) / 2
+    dx = center - (width / 2)
 
-def format_net_output(box_2d, orient, dim):
+    mult = 1
+    if dx < 0:
+        mult = -1
+    dx = abs(dx)
+    angle = np.arctan( (2*dx*np.tan(fovx/2)) / width )
+    angle = angle * mult
+
+    return angle
+
+
+
+def format_net_output(box_2d, orient, dim, theta_ray):
     net_output = {}
     net_output['Box_2D'] = box_2d
     net_output['Orientation'] = orient
     net_output['Dimension'] = dim
+    net_output['ThetaRay'] = theta_ray
 
     return net_output
 
@@ -628,7 +269,10 @@ def main():
 
         calib_file = os.path.abspath(os.path.dirname(__file__)) + '/eval/calib/%s.txt' % img_ID
 
-        truth_img = draw_truth_boxes(img_idx, img_data, calib_file)
+        truth_img = img_data.GetRawImage(img_idx)
+        info = img_data[img_idx]['Label']
+        # draw_truth_boxes(truth_img, info, calib_file)
+
         img = img_data.GetRawImage(img_idx)
 
         # batches is the all objects in image, cropped, i.e. crop with just a car
@@ -660,30 +304,14 @@ def main():
             orient_max = orient[argmax, :]
             cos = orient_max[0]
             sin = orient_max[1]
-            theta = np.arctan2(sin, cos) # should be radians, but double check
-            theta = theta + angle_bins[argmax]
+            alpha = np.arctan2(sin, cos) # should be radians, but double check
+            alpha = alpha + angle_bins[argmax]
 
-            theta_ray = calc_theta_ray(box_2d) # get horiz angle to the center of this box
-            # theta = theta + theta_ray
-
-            theta = 360 - info['ThetaRay'] - theta # this should be done with math on pixel center of box
-
-            # why format like this?
-            # if theta > 0: theta -= int(theta / 360) * 360
-            # elif theta < 0: theta += (int(-theta / 360) + 1) * 36
-
-            # why this?
-            Ry = info['Ry']
-            if Ry > 0: Ry -= int(Ry / 360) * 360
-            elif Ry < 0: Ry += (int(-Ry / 360) + 1) * 360
-
-
+            theta_ray = calc_theta_ray(img, box_2d) # get horiz angle to the center of this box
 
             # format outputs
-            net_output = format_net_output(box_2d, orient, dim)
+            net_output = format_net_output(box_2d, alpha, dim, theta_ray)
 
-            # if i != 4:
-            #     continue
 
             # project 3d into 2d to visualize
             img = plot_regressed_3d_bbox(img, net_output, calib_file, info, truth_img)
@@ -703,9 +331,8 @@ def main():
         # put truth image on top
         if not single_car:
             numpy_vertical = np.concatenate((truth_img, img), axis=0)
-            cv2.imshow('Truth on top, Prediction on bottom for image', numpy_vertical)
+            cv2.imshow('2D detection on top, 3D prediction on bottom', numpy_vertical)
             cv2.waitKey(0)
-        # cv2.destroyAllWindows()
 
 
 
