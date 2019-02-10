@@ -7,8 +7,8 @@ import numpy as np
 
 class ImageDataset:
     def __init__(self, path):
-        self.img_path = path + '/image_2'
-        self.label_path = path + '/label_2'
+        self.img_path = path + '/image'
+        self.label_path = path + '/label'
 
         self.IDLst = [x.split('.')[0] for x in sorted(os.listdir(self.img_path))]
 
@@ -91,7 +91,7 @@ class BatchDataset:
             self.idx = 0
             self.num_of_patch = 35570
         else:
-            self.idx = 35570
+            self.idx = 0
             self.num_of_patch = 5000
         #print len(self.info)
         #print self.info
@@ -133,7 +133,8 @@ class BatchDataset:
                                 'ConfidenceMulti': confidence_multi,
                                 'Ntheta':n,
                                 'Ry': label['Ry'],
-                                'ThetaRay': label['ThetaRay']
+                                'ThetaRay': label['ThetaRay'],
+                                'Alpha': label['Alpha']
                             })
         return data
 
@@ -165,7 +166,7 @@ class BatchDataset:
             confidence_multi[one, :] = data['ConfidenceMulti'][:]
             #confidence[one, :] /= np.sum(confidence[one, :])
             ntheta[one] = data['Ntheta']
-            angleDiff[one, :] = data['LocalAngle'] - self.centerAngle
+            angleDiff[one, :] = data['Alpha'] - self.centerAngle
             dim[one, :] = data['Dimension']
             if self.mode == 'train':
                 if self.idx + 1 < self.num_of_patch:

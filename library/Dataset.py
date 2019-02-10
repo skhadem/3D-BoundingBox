@@ -123,6 +123,13 @@ class DetectedObject:
         return angle
 
     def format_img(self, img, box_2d):
+
+        img=img.astype(np.float) / 255
+
+        img[:, :, 0] = (img[:, :, 0] - 0.406) / 0.225
+        img[:, :, 1] = (img[:, :, 1] - 0.456) / 0.224
+        img[:, :, 2] = (img[:, :, 2] - 0.485) / 0.229
+
         # crop image
         batch = np.zeros([1, 3, 224, 224], np.float)
         pt1 = box_2d[0]
@@ -131,7 +138,7 @@ class DetectedObject:
         crop = cv2.resize(src = crop, dsize=(224, 224), interpolation=cv2.INTER_CUBIC)
 
         # cv2.imshow('hello', crop) # to see the input cropped section
-        # cv2.waitKey(0);
+        # cv2.waitKey(0)
 
         # recolor, reformat
         batch[0, 0, :, :] = crop[:, :, 2]

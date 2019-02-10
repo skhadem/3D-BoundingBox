@@ -27,22 +27,29 @@ Notes:
 from library.Dataset import *
 from library.Math import *
 from library.Plotting import *
+from Library import Model
+
 import os
 import cv2
+
+import torch
+import torch.nn as nn
+from torch.autograd import Variable
+from torchvision.models import vgg as V
 
 
 debug_corners = True
 
 # plot from net output. The orient should be global
 # after done testing math, can remove label param
-def plot_regressed_3d_bbox(img, truth_img, box_2d, dimension, alpha, theta_ray, cam_to_img, label):
+def plot_regressed_3d_bbox(img, truth_img, box_2d, dimensions, alpha, theta_ray, cam_to_img, label):
 
     # use truth for now
     truth_dims = label['Dimensions']
     truth_orient = label['Ry']
 
     # the math! returns X, the corners used for constraint
-    center, X = calc_location(truth_dims, cam_to_img, box_2d, alpha, theta_ray)
+    center, X = calc_location(dimensions, cam_to_img, box_2d, alpha, theta_ray)
 
     center = [center[0][0], center[1][0], center[2][0]]
 
@@ -65,7 +72,8 @@ def plot_regressed_3d_bbox(img, truth_img, box_2d, dimension, alpha, theta_ray, 
         left = X[0]
         right = X[1]
         # DEBUG with left and right as different colors
-        corners = create_corners(truth_dims) # unrotated
+        # corners = create_corners(truth_dims) # unrotated
+        corners = create_corners(dimensions) # unrotated
 
         left_corner_indexes = [corners.index(i) for i in left] # get indexes
         right_corner_indexes = [corners.index(i) for i in right] # get indexes
@@ -95,7 +103,28 @@ def plot_regressed_3d_bbox(img, truth_img, box_2d, dimension, alpha, theta_ray, 
 
 
 def main():
+
+    store_path = os.path.abspath(os.path.dirname(__file__)) + '/models'
+    model_lst = [x for x in sorted(os.listdir(store_path)) if x.endswith('.pkl')]
+    if len(model_lst) == 0:
+        print 'No previous model found, please check it'
+        exit()
+    else:
+        print 'Find previous model %s'%model_lst[-1]
+        vgg = V.vgg19_bn(pretrained=False)
+        model = Model.Model(features=vgg.features, bins=2).cuda()
+        params = torch.load(store_path + '/%s'%model_lst[-1])
+        model.load_state_dict(params)
+        model.eval()
+
     dataset = Dataset(os.path.abspath(os.path.dirname(__file__)) + '/eval')
+
+    bins = model.bins
+    centerAngle = np.zeros(bins)
+    interval = 2 * np.pi / bins
+    for i in range(1, bins):
+        centerAngle[i] = i*interval
+
 
     for data in dataset:
         truth_img = data['Image']
@@ -106,13 +135,33 @@ def main():
         for object in objects:
             label = object.label
             theta_ray = object.theta_ray
+            batch = object.img
 
-            # soon come from regression
             alpha = label['Alpha']
             dimensions = label['Dimensions']
 
-            plot_regressed_3d_bbox(img, truth_img, label['Box_2D'], dimensions, alpha, theta_ray, cam_to_img, label)
+            batch = Variable(torch.FloatTensor(batch), requires_grad=False).cuda()
+            [orient, conf, dim] = model(batch)
+            orient = orient.cpu().data.numpy()[0, :, :]
+            conf = conf.cpu().data.numpy()[0, :]
+            dim = dim.cpu().data.numpy()[0, :]
+            argmax = np.argmax(conf)
 
+            orient = orient[argmax, :]
+            cos = orient[0]
+            sin = orient[1]
+            theta = np.arctan2(sin, cos)
+            theta = theta + centerAngle[argmax]
+
+            print theta
+            print alpha
+
+            exit()
+
+
+
+
+            plot_regressed_3d_bbox(img, truth_img, label['Box_2D'], dim, alpha, theta_ray, cam_to_img, label)
 
         numpy_vertical = np.concatenate((truth_img, img), axis=0)
         cv2.imshow('2D detection on top, 3D prediction on bottom', numpy_vertical)
