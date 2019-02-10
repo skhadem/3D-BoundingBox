@@ -7,6 +7,9 @@ PyTorch implementation for this [paper](https://arxiv.org/abs/1612.00496).
 ![example](http://soroushkhadem.com/img/2d-top-3d-bottom1.png)
 
 ## Usage
+First, download the data from [Kitti](http://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=2d).
+You will need the left color images, the training labels, and the camera calibration matrices. Total is ~13GB.
+
 
 ## Training
 

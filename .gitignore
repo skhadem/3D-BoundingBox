@@ -1,9 +1,6 @@
-model*
+model/*.pkl
 *.pyc
 *.swp
-Test/data
-models/
-train.py
-Kitti
-comments.txt
-vizualize_data_fmt.txt
+Kitti/testing
+Kitti/training
+legacy

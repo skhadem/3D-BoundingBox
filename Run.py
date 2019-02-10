@@ -24,10 +24,10 @@ Notes:
 """
 
 
-from library.Dataset import *
+from torch_lib.Dataset import *
 from library.Math import *
 from library.Plotting import *
-from Library import Model
+from torch_lib import Model
 
 import os
 import cv2
