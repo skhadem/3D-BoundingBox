@@ -1,7 +1,10 @@
 import cv2
 import numpy as np
 import os
-from File import *
+import random
+
+from library.File import *
+
 
 """
 Will hold all the ImageData objbects. Should only be used when evaluating or
@@ -9,38 +12,27 @@ training. When running, pass image and array of 2d boxes directly into an ImageD
 object
 """
 class Dataset:
-    def __init__(self, path):
-        self.data = {}
+    def __init__(self, path, batch_size=100):
+        self.top_label_path = path + "/label_2"
+        self.top_img_path = path + "/image_2"
+        self.top_calib_path = path + "/calib"
 
-        top_label_path = path + "/label"
-        top_img_path = path + "/image"
-        top_calib_path = path + "/calib"
+        self.k = self.get_K(os.path.abspath(os.path.dirname(os.path.dirname(__file__)) + '/camera_cal/calib_cam_to_cam.txt'))
+        self.ids = [x.split('.')[0] for x in sorted(os.listdir(self.top_img_path))] # name of file
+        self.num_images = len(self.ids)
+        self.num_objects = self.total_num_objects(self.ids)
 
-        K = self.get_K(os.path.abspath(os.path.dirname(os.path.dirname(__file__)) + '/camera_cal/calib_cam_to_cam.txt'))
-        self.ids = [x.split('.')[0] for x in sorted(os.listdir(top_img_path))]
-
-
-        for id in self.ids:
-            self.data[id] = {}
-            img_path = top_img_path + '/%s.png'%id
-            img = cv2.imread(img_path)
-            self.data[id]['Image'] = img
-
-            calib_path = top_calib_path + '/%s.txt'%id
-            self.data[id]['Calib'] = get_calibration_cam_to_image(calib_path)
-
-
-            label_path = top_label_path + '/%s.txt'%id
-            labels = self.parse_label(label_path)
-            objects = []
-            for label in labels:
-                box_2d = label['Box_2D']
-                objects.append(DetectedObject(img, box_2d, K, label=label))
-
-            self.data[id]['Objects'] = objects
 
         self.current = 0
 
+
+
+    def total_num_objects(self, ids):
+        total = 0
+        for id in self.ids:
+            total += len(self.parse_label(self.top_label_path + '/%s.txt'%id))
+
+        return total
 
     def parse_label(self, label_path):
         buf = []
@@ -75,6 +67,70 @@ class Dataset:
                     })
         return buf
 
+    def all_objects(self):
+        data = {}
+        for id in self.ids:
+            data[id] = {}
+            img_path = self.top_img_path + '/%s.png'%id
+            img = cv2.imread(img_path)
+            data[id]['Image'] = img
+
+            calib_path = self.top_calib_path + '/%s.txt'%id
+            data[id]['Calib'] = get_calibration_cam_to_image(calib_path)
+
+
+            label_path = self.top_label_path + '/%s.txt'%id
+            labels = self.parse_label(label_path)
+            objects = []
+            for label in labels:
+                box_2d = label['Box_2D']
+                detection_class = label['Class']
+                objects.append(DetectedObject(img, detection_class, box_2d, self.k, label=label))
+
+            data[id]['Objects'] = objects
+
+        return data
+
+
+    def generate_batch_splits(self, total, batch_size):
+        splits = [x for x in range(0, total, batch_size)]
+        splits.append(total)
+
+        return splits
+
+
+    def new_batch(self, min_idx, max_idx):
+        self.current_ids = self.ids[min_idx:max_idx]
+
+    # shuffle the current batch and return the objects
+    def shuffle_batch(self):
+        random.shuffle(self.current_ids)
+        objects = []
+
+        for id in self.current_ids:
+            for obj in self.generate_objects(id):
+                objects.append(obj)
+
+        return objects
+
+    # from a filename generate a DetectedObject object
+    def generate_objects(self, id):
+        img_path = self.top_img_path + '/%s.png'%id
+        img = cv2.imread(img_path)
+
+        calib_path = self.top_calib_path + '/%s.txt'%id
+        label_path = self.top_label_path + '/%s.txt'%id
+        labels = self.parse_label(label_path)
+
+        objects = []
+        for label in labels:
+            box_2d = label['Box_2D']
+            detection_class = label['Class']
+            objects.append(DetectedObject(img, detection_class, box_2d, self.k, label=label))
+
+        return objects
+
+
 
     def get_K(self, cab_f):
         for line in open(cab_f, 'r'):
@@ -88,6 +144,8 @@ class Dataset:
 
 
 
+# ------ python overrides
+
     def __iter__(self):
         return self
 
@@ -99,12 +157,21 @@ class Dataset:
             id = self.ids[self.current-1]
             return self.data[id]
 
+    def __getitem__(self, index):
+        return self.data[self.ids[index]]
 
+
+"""
+What is *sorta* the input to the neural net. Will hold the cropped image and
+the angle to that image, and (optionally) the label for the object. The idea
+is to keep this abstract enough so it can be used in combination with YOLO
+"""
 class DetectedObject:
-    def __init__(self, img, box_2d, K, label=None):
+    def __init__(self, img, detection_class, box_2d, K, label=None):
         self.theta_ray = self.calc_theta_ray(img, box_2d, K)
         self.img = self.format_img(img, box_2d)
         self.label = label
+        self.detection_class = detection_class
 
 
     def calc_theta_ray(self, img, box_2d, K):
