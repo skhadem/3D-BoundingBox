@@ -20,7 +20,7 @@ Notes:
 - The net outputs an angle (actually a sin and cos) relative to an angle defined
     by the # of bins, thus the # of bins used to train model should be known
 - Everything should be using radians, just for consistancy (old version used degrees, so careful!)
-- Is class ever used? Could this be an improvement?
+- class should be used for average dimension to help net
 """
 
 
