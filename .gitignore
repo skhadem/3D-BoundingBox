@@ -1,4 +1,4 @@
-model/*.pkl
+*.pkl
 *.pyc
 *.swp
 Kitti/testing

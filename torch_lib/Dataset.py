@@ -4,12 +4,15 @@ import os
 import random
 
 import torch
+from torchvision import transforms
 from torch.utils import data
 
 from library.File import *
 
+from ClassAverages import ClassAverages
+
 class Dataset(data.Dataset):
-    def __init__(self, path):
+    def __init__(self, path, bins=2, overlap=0.1):
 
         self.top_label_path = path + "/label_2/"
         self.top_img_path = path + "/image_2/"
@@ -19,12 +22,48 @@ class Dataset(data.Dataset):
         self.k = self.get_K(os.path.abspath(os.path.dirname(os.path.dirname(__file__)) + '/camera_cal/calib_cam_to_cam.txt'))
         self.ids = [x.split('.')[0] for x in sorted(os.listdir(self.top_img_path))] # name of file
         self.num_images = len(self.ids)
-        self.num_objects = self.total_num_objects(self.ids)
+
+        # create angle bins
+        self.bins = bins
+        self.overlap = overlap
+        self.angle_bins = np.zeros(bins)
+        self.interval = 2 * np.pi / bins
+        for i in range(1,bins):
+            self.angle_bins[i] = i * self.interval
+        self.angle_bins += self.interval / 2 # center of the bin
+
+        # ranges for confidence
+        # [(min angle in bin, max angle in bin), ... ]
+        self.bin_ranges = []
+        for i in range(0,bins):
+            self.bin_ranges.append(( (i*self.interval - overlap) % (2*np.pi), \
+                                (i*self.interval + self.interval + overlap) % (2*np.pi)) )
+
+        # hold average dimensions
+        class_list = ['Car', 'Van', 'Truck', 'Pedestrian','Person_sitting', 'Cyclist', 'Tram', 'Misc']
+        self.averages = ClassAverages(class_list)
+
         self.object_list = self.get_objects(self.ids)
+
+        # pre-fetch all labels
+        self.labels = {}
+        last_id = ""
+        for obj in self.object_list:
+            id = obj[0]
+            line_num = obj[1]
+            label = self.get_label(id, line_num)
+            if id != last_id:
+                self.labels[id] = {}
+                last_id = id
+
+            self.labels[id][str(line_num)] = label
+
+        # hold one image at a time
         self.curr_id = ""
         self.curr_img = None
 
-    # return Input, Label
+
+    # should return (Input, Label)
     def __getitem__(self, index):
         id = self.object_list[index][0]
         line_num = self.object_list[index][1]
@@ -33,40 +72,37 @@ class Dataset(data.Dataset):
             self.curr_id = id
             self.curr_img = cv2.imread(self.top_img_path + '%s.png'%id)
 
-        label = self.get_label(id, line_num)
+        label = self.labels[id][str(line_num)]
         obj = DetectedObject(self.curr_img, label['Class'], label['Box_2D'], self.k, label=label)
 
         return obj.img, label
 
     def __len__(self):
-        return self.num_objects
+        return len(self.object_list)
 
     def get_objects(self, ids):
         objects = []
         for id in ids:
             with open(self.top_label_path + '%s.txt'%id) as file:
-                for index,line in enumerate(file):
+                for line_num,line in enumerate(file):
                     line = line[:-1].split(' ')
                     obj_class = line[0]
                     if obj_class == "DontCare":
                         continue
-                    objects.append((id, index))
+
+                    dimension = np.array([float(line[8]), float(line[9]), float(line[10])], dtype=np.double)
+                    self.averages.add_item(obj_class, dimension)
+
+                    objects.append((id, line_num))
 
         return objects
 
 
     def get_label(self, id, line_num):
-        lines = open(filename).read().splitlines()
-        label = format_label(lines[line_num])
+        lines = open(self.top_label_path + '%s.txt'%id).read().splitlines()
+        label = self.format_label(lines[line_num])
 
         return label
-
-    def total_num_objects(self, ids):
-        total = 0
-        for id in self.ids:
-            total += len(self.parse_label(self.top_label_path + '%s.txt'%id))
-
-        return total
 
     def get_K(self, cab_f):
         for line in open(cab_f, 'r'):
@@ -77,8 +113,6 @@ class Dataset(data.Dataset):
                 return_matrix[:,:-1] = cam_K.reshape((3,3))
 
         return return_matrix
-
-
 
     def parse_label(self, label_path):
         buf = []
@@ -113,6 +147,21 @@ class Dataset(data.Dataset):
                     })
         return buf
 
+    def get_bin(self, angle):
+
+        bin_idxs = []
+
+        def is_between(min, max, angle):
+            max = (max - min) if (max - min) > 0 else (max - min) + 2*np.pi
+            angle = (angle - min) if (angle - min) > 0 else (angle - min) + 2*np.pi
+            return angle < max
+
+        for bin_idx, bin_range in enumerate(self.bin_ranges):
+            if is_between(bin_range[0], bin_range[1], angle):
+                bin_idxs.append(bin_idx)
+
+        return bin_idxs
+
     def format_label(self, line):
         line = line[:-1].split(' ')
 
@@ -127,20 +176,37 @@ class Dataset(data.Dataset):
         bottom_right = (int(round(line[6])), int(round(line[7])))
         Box_2D = [top_left, bottom_right]
 
-        Dimension = [line[8], line[9], line[10]] # height, width, length
+        Dimension = np.array([line[8], line[9], line[10]], dtype=np.double) # height, width, length
+        # modify for the average
+        Dimension -= self.averages.get_item(Class)
+
         Location = [line[11], line[12], line[13]] # x, y, z
         Location[1] -= Dimension[0] / 2 # bring the KITTI center up to the middle of the object
 
-        buf.append({
+        Orientation = np.zeros((self.bins, 2))
+        Confidence = np.zeros(self.bins)
+
+        # alpha is [-pi..pi], shift it to be [0..2pi]
+        angle = Alpha + np.pi
+
+        bin_idxs = self.get_bin(angle)
+
+        for bin_idx in bin_idxs:
+            angle_diff = angle - self.angle_bins[bin_idx]
+
+            Orientation[bin_idx,:] = np.array([np.cos(angle_diff), np.sin(angle_diff)])
+            Confidence[bin_idx] = 1
+
+        label = {
                 'Class': Class,
                 'Box_2D': Box_2D,
                 'Dimensions': Dimension,
-                'Location': Location,
                 'Alpha': Alpha,
-                'Ry': Ry
-            })
+                'Orientation': Orientation,
+                'Confidence': Confidence
+                }
 
-        return buf
+        return label
 
 
     # will be deprc soon
@@ -199,156 +265,26 @@ class DetectedObject:
 
     def format_img(self, img, box_2d):
 
-        img=img.astype(np.float) / 255
+        # img=img.astype(np.float) / 255
 
-        img[:, :, 0] = (img[:, :, 0] - 0.406) / 0.225
-        img[:, :, 1] = (img[:, :, 1] - 0.456) / 0.224
-        img[:, :, 2] = (img[:, :, 2] - 0.485) / 0.229
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                std=[0.229, 0.224, 0.225])
+        process = transforms.Compose ([
+            transforms.ToTensor(),
+            normalize
+        ])
 
         # crop image
-        batch = np.zeros([3, 224, 224], np.float)
+
         pt1 = box_2d[0]
         pt2 = box_2d[1]
         crop = img[pt1[1]:pt2[1]+1, pt1[0]:pt2[0]+1]
         crop = cv2.resize(src = crop, dsize=(224, 224), interpolation=cv2.INTER_CUBIC)
 
+
         # cv2.imshow('hello', crop) # to see the input cropped section
         # cv2.waitKey(0)
 
         # recolor, reformat
-        batch[0, :, :] = crop[:, :, 2]
-        batch[1, :, :] = crop[:, :, 1]
-        batch[2, :, :] = crop[:, :, 0]
-
+        batch = process(crop)
         return batch
-
-
-"""
-Will hold all the ImageData objbects. Should only be used when evaluating or
-training. When running, pass image and array of 2d boxes directly into an ImageData
-object
-"""
-class Dataset_old:
-    def __init__(self, path, batch_size=100):
-        self.top_label_path = path + "/label_2"
-        self.top_img_path = path + "/image_2"
-        self.top_calib_path = path + "/calib"
-
-        self.k = self.get_K(os.path.abspath(os.path.dirname(os.path.dirname(__file__)) + '/camera_cal/calib_cam_to_cam.txt'))
-        self.ids = [x.split('.')[0] for x in sorted(os.listdir(self.top_img_path))] # name of file
-        self.num_images = len(self.ids)
-        self.num_objects = self.total_num_objects(self.ids)
-
-
-        self.current = 0
-
-
-
-    def total_num_objects(self, ids):
-        total = 0
-        for id in self.ids:
-            total += len(self.parse_label(self.top_label_path + '/%s.txt'%id))
-
-        return total
-
-    def parse_label(self, label_path):
-        buf = []
-        with open(label_path, 'r') as f:
-            for line in f:
-                line = line[:-1].split(' ')
-
-                Class = line[0]
-                if Class == "DontCare":
-                    continue
-
-                for i in range(1, len(line)):
-                    line[i] = float(line[i])
-
-                Alpha = line[3] # what we will be regressing
-                Ry = line[14]
-                top_left = (int(round(line[4])), int(round(line[5])))
-                bottom_right = (int(round(line[6])), int(round(line[7])))
-                Box_2D = [top_left, bottom_right]
-
-                Dimension = [line[8], line[9], line[10]] # height, width, length
-                Location = [line[11], line[12], line[13]] # x, y, z
-                Location[1] -= Dimension[0] / 2 # bring the KITTI center up to the middle of the object
-
-                buf.append({
-                        'Class': Class,
-                        'Box_2D': Box_2D,
-                        'Dimensions': Dimension,
-                        'Location': Location,
-                        'Alpha': Alpha,
-                        'Ry': Ry
-                    })
-        return buf
-
-
-    def generate_batch_splits(self, total, batch_size):
-        splits = [x for x in range(0, total, batch_size)]
-        splits.append(total)
-
-        return splits
-
-
-    def new_batch(self, min_idx, max_idx):
-        self.current_ids = self.ids[min_idx:max_idx]
-
-    # shuffle the current batch and return the objects
-    def shuffle_batch(self):
-        random.shuffle(self.current_ids)
-        objects = []
-
-        for id in self.current_ids:
-            for obj in self.generate_objects(id):
-                objects.append(obj)
-
-        return objects
-
-    # from a filename generate a DetectedObject object
-    def generate_objects(self, id):
-        img_path = self.top_img_path + '/%s.png'%id
-        img = cv2.imread(img_path)
-
-        calib_path = self.top_calib_path + '/%s.txt'%id
-        label_path = self.top_label_path + '/%s.txt'%id
-        labels = self.parse_label(label_path)
-
-        objects = []
-        for label in labels:
-            box_2d = label['Box_2D']
-            detection_class = label['Class']
-            objects.append(DetectedObject(img, detection_class, box_2d, self.k, label=label))
-
-        return objects
-
-
-
-    def get_K(self, cab_f):
-        for line in open(cab_f, 'r'):
-            if 'K_02' in line:
-                cam_K = line.strip().split(' ')
-                cam_K = np.asarray([float(cam_K) for cam_K in cam_K[1:]])
-                return_matrix = np.zeros((3,4))
-                return_matrix[:,:-1] = cam_K.reshape((3,3))
-
-        return return_matrix
-
-
-
-# ------ python overrides
-
-    def __iter__(self):
-        return self
-
-    def next(self):
-        if self.current  == len(self.ids):
-            raise StopIteration
-        else:
-            self.current += 1
-            id = self.ids[self.current-1]
-            return self.data[id]
-
-    def __getitem__(self, index):
-        return self.data[self.ids[index]]

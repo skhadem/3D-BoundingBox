@@ -6,10 +6,7 @@ PyTorch implementation for this [paper](https://arxiv.org/abs/1612.00496).
 
 ![example](http://soroushkhadem.com/img/2d-top-3d-bottom1.png)
 
-## Future Goals
-- YOLO integration to get 2D boxes
-- Cuda optimization to run fram by frame on video feed
-- ROS node to publish positions 
+## How it works
 
 ## Usage
 First, download the data from [Kitti](http://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=2d).
@@ -18,7 +15,11 @@ You will need the left color images, the training labels, and the camera calibra
 
 ## Training
 
-## Math Explained
+
+## Future Goals
+- YOLO integration to get 2D boxes
+- Cuda optimization to run frame by frame on video feed
+- ROS node to publish positions
 
 ## Credit
-The original repo had a good start for training the model, credit to fuenwang for the original start. Most of the code has been rewritten but his structure remains.
+I originally started from a fork of this [repo](https://github.com/fuenwang/3D-BoundingBox), and some of the original code still exists in the training script.

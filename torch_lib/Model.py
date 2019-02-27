@@ -1,36 +1,36 @@
-import os
-import sys
-import cv2
 import torch
-from torchvision.models import vgg
-import Dataset
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-#import ipdb
 
+# TODO optimize using torch functions
+def OrientationLoss(orient_batch, orientGT_batch, confGT_batch):
+    total_loss = torch.tensor(0).float().cuda()
+    batch_size = orient_batch.size()[0]
 
-#def OrientationLoss(orient, orientGT)
-def OrientationLoss(orient, angleDiff, confGT):
-    #
-    # orid = [sin(delta), cos(delta)] shape = [batch, bins, 2]
-    # angleDiff = GT - center, shape = [batch, bins]
-    #
-    [batch, _, bins] = orient.size()
-    cos_diff = torch.cos(angleDiff)
-    sin_diff = torch.sin(angleDiff)
-    cos_ori = orient[:, :, 0]
-    sin_ori = orient[:, :, 1]
-    mask1 = (confGT != 0)
-    mask2 = (confGT == 0)
-    count = torch.sum(mask1, dim=1)
-    tmp = cos_diff * cos_ori + sin_diff * sin_ori
-    tmp[mask2] = 0
-    total = torch.sum(tmp, dim = 1)
-    count = count.type(torch.FloatTensor).cuda()
-    total = total / count
-    return -torch.sum(total) / batch
+    for row in range(0, batch_size):
+        row_loss = 0
+        confGT = confGT_batch[row]
+        orientGT = orientGT_batch[row]
+        orient = orient_batch[row]
+
+        n_theta = torch.sum(confGT).float().cuda()
+
+        # for each bin that covers GT angle
+        for conf_arg in range(0, len(confGT)):
+            if confGT[conf_arg] != 1:
+                continue
+
+            # recover GT angle diff
+            #TODO use arctan2 instead
+            theta_diff = torch.acos(orientGT[conf_arg][0]).float().cuda()
+            estimated_theta_diff = torch.acos(orient[conf_arg][0]).float().cuda()
+            row_loss += torch.cos(theta_diff - estimated_theta_diff)
+
+        total_loss += ( 1/n_theta ) * row_loss
+
+    return -total_loss/batch_size
 
 class Model(nn.Module):
     def __init__(self, features=None, bins=2, w = 0.4):
@@ -54,8 +54,8 @@ class Model(nn.Module):
                     nn.Linear(256, 256),
                     nn.ReLU(True),
                     nn.Dropout(),
-                    nn.Linear(256, bins)
-                    #nn.Softmax()
+                    nn.Linear(256, bins),
+                    # nn.Softmax()
                     #nn.Sigmoid()
                 )
         self.dimension = nn.Sequential(
