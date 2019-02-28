@@ -161,8 +161,10 @@ def main():
             # sin = orient[1]
             # theta = np.arctan2(sin, cos)
             # theta = theta + centerAngle[argmax]
+            # theta = theta - np.pi
             #
             # print theta
+            # alpha = theta
             print alpha
 
             # exit()

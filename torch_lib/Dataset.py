@@ -114,39 +114,6 @@ class Dataset(data.Dataset):
 
         return return_matrix
 
-    def parse_label(self, label_path):
-        buf = []
-        with open(label_path, 'r') as f:
-            for line in f:
-                line = line[:-1].split(' ')
-
-                Class = line[0]
-                if Class == "DontCare":
-                    continue
-
-                for i in range(1, len(line)):
-                    line[i] = float(line[i])
-
-                Alpha = line[3] # what we will be regressing
-                Ry = line[14]
-                top_left = (int(round(line[4])), int(round(line[5])))
-                bottom_right = (int(round(line[6])), int(round(line[7])))
-                Box_2D = [top_left, bottom_right]
-
-                Dimension = [line[8], line[9], line[10]] # height, width, length
-                Location = [line[11], line[12], line[13]] # x, y, z
-                Location[1] -= Dimension[0] / 2 # bring the KITTI center up to the middle of the object
-
-                buf.append({
-                        'Class': Class,
-                        'Box_2D': Box_2D,
-                        'Dimensions': Dimension,
-                        'Location': Location,
-                        'Alpha': Alpha,
-                        'Ry': Ry
-                    })
-        return buf
-
     def get_bin(self, angle):
 
         bin_idxs = []
@@ -208,6 +175,39 @@ class Dataset(data.Dataset):
 
         return label
 
+    # will be deprc soon
+    def parse_label(self, label_path):
+        buf = []
+        with open(label_path, 'r') as f:
+            for line in f:
+                line = line[:-1].split(' ')
+
+                Class = line[0]
+                if Class == "DontCare":
+                    continue
+
+                for i in range(1, len(line)):
+                    line[i] = float(line[i])
+
+                Alpha = line[3] # what we will be regressing
+                Ry = line[14]
+                top_left = (int(round(line[4])), int(round(line[5])))
+                bottom_right = (int(round(line[6])), int(round(line[7])))
+                Box_2D = [top_left, bottom_right]
+
+                Dimension = [line[8], line[9], line[10]] # height, width, length
+                Location = [line[11], line[12], line[13]] # x, y, z
+                Location[1] -= Dimension[0] / 2 # bring the KITTI center up to the middle of the object
+
+                buf.append({
+                        'Class': Class,
+                        'Box_2D': Box_2D,
+                        'Dimensions': Dimension,
+                        'Location': Location,
+                        'Alpha': Alpha,
+                        'Ry': Ry
+                    })
+        return buf
 
     # will be deprc soon
     def all_objects(self):
