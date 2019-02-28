@@ -4,33 +4,20 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-# TODO optimize using torch functions
+
 def OrientationLoss(orient_batch, orientGT_batch, confGT_batch):
-    total_loss = torch.tensor(0).float().cuda()
+    
     batch_size = orient_batch.size()[0]
+    indexes = torch.max(confGT_batch, dim=1)[1]
 
-    for row in range(0, batch_size):
-        row_loss = 0
-        confGT = confGT_batch[row]
-        orientGT = orientGT_batch[row]
-        orient = orient_batch[row]
+    # extract just the important bin
+    orientGT_batch = orientGT_batch[torch.arange(batch_size), indexes]
+    orient_batch = orient_batch[torch.arange(batch_size), indexes]
 
-        n_theta = torch.sum(confGT).float().cuda()
+    theta_diff = torch.atan2(orientGT_batch[:,1], orientGT_batch[:,0])
+    estimated_theta_diff = torch.atan2(orient_batch[:,1], orient_batch[:,0])
 
-        # for each bin that covers GT angle
-        for conf_arg in range(0, len(confGT)):
-            if confGT[conf_arg] != 1:
-                continue
-
-            # recover GT angle diff
-            #TODO use arctan2 instead
-            theta_diff = torch.acos(orientGT[conf_arg][0]).float().cuda()
-            estimated_theta_diff = torch.acos(orient[conf_arg][0]).float().cuda()
-            row_loss += torch.cos(theta_diff - estimated_theta_diff)
-
-        total_loss += ( 1/n_theta ) * row_loss
-
-    return -total_loss/batch_size
+    return -1 * torch.cos(theta_diff - estimated_theta_diff).mean()
 
 class Model(nn.Module):
     def __init__(self, features=None, bins=2, w = 0.4):
