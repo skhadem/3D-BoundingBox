@@ -1,27 +1,18 @@
 import numpy as np
 
-# need to double check the coordinate system used, I believe it is from camera coords
 # using this math: https://en.wikipedia.org/wiki/Rotation_matrix
 def rotation_matrix(yaw, pitch=0, roll=0):
-    # print yaw
     tx = roll
     ty = yaw
     tz = pitch
-
-    # from net:
-    # yaw comes out of the net as a 2x2, seems to be confidence and angle?
-    # get angle of highest confidence, (rad2deg?)
-    # tz = yaw[np.argmax(yaw[:,0]), :][1]
 
     Rx = np.array([[1,0,0], [0, np.cos(tx), -np.sin(tx)], [0, np.sin(tx), np.cos(tx)]])
     Ry = np.array([[np.cos(ty), 0, np.sin(ty)], [0, 1, 0], [-np.sin(ty), 0, np.cos(ty)]])
     Rz = np.array([[np.cos(tz), -np.sin(tz), 0], [np.sin(tz), np.cos(tz), 0], [0,0,1]])
 
 
-    return Ry.reshape([3,3]) # do we use this ?
+    return Ry.reshape([3,3])
     # return np.dot(np.dot(Rz,Ry), Rx)
-
-
 
 # option to rotate and shift (for label info)
 def create_corners(dimension, location=None, R=None):
@@ -58,21 +49,12 @@ def create_corners(dimension, location=None, R=None):
 
     return final_corners
 
-
-
-
-
-# this should be based on the paper. Math!
+# this is based on the paper. Math!
 # calib is a 3x4 matrix, box_2d is [(xmin, ymin), (xmax, ymax)]
 # Math help: http://ywpkwon.github.io/pdf/bbox3d-study.pdf
 def calc_location(dimension, K, box_2d, alpha, theta_ray):
-
-    # this one didn't work well
-    # K = get_K(os.path.abspath(os.path.dirname(__file__)) + '/eval/calib/calib_cam_to_cam.txt')
-
-
+    #global orientation
     orient = alpha + theta_ray
-
     R = rotation_matrix(orient)
 
     # format 2d corners
@@ -97,17 +79,12 @@ def calc_location(dimension, K, box_2d, alpha, theta_ray):
     dy = dimension[0] / 2
     dz = dimension[1] / 2
 
-    # below is very based on trial and error
+    # below is very much based on trial and error
 
     # based on the relative angle, a different configuration occurs
     # negative is back of car, positive is front
     left_mult = 1
     right_mult = -1
-
-
-    print("Alpha: %s") % np.rad2deg(alpha)
-    print("ThetaRay: %s") % np.rad2deg(theta_ray)
-    print("Theta: %s") % np.rad2deg(orient)
 
     # about straight on but opposite way
     if alpha < np.deg2rad(92) and alpha > np.deg2rad(88):
@@ -204,15 +181,12 @@ def calc_location(dimension, K, box_2d, alpha, theta_ray):
         loc, error, rank, s = np.linalg.lstsq(A, b)
 
         # found a better estimation
-
         if error < best_error:
             count += 1 # for debugging
             best_loc = loc
             best_error = error
             best_X = X_array
 
-    # print count
-    # print best_error
-
-    # return best_loc, best_X
-    return best_loc, [left_constraints, right_constraints]
+    # return best_loc, [left_constraints, right_constraints] # for debugging
+    best_loc = [best_loc[0][0], best_loc[1][0], best_loc[2][0]]
+    return best_loc, best_X

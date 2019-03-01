@@ -6,7 +6,7 @@ from torch.autograd import Variable
 
 
 def OrientationLoss(orient_batch, orientGT_batch, confGT_batch):
-    
+
     batch_size = orient_batch.size()[0]
     indexes = torch.max(confGT_batch, dim=1)[1]
 

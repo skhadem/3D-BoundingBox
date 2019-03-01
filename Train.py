@@ -43,7 +43,11 @@ def main():
     if not os.path.isdir(model_path):
         os.mkdir(model_path)
     else:
-        latest_model = [x for x in sorted(os.listdir(model_path)) if x.endswith('.pkl')][-1]
+        try:
+            latest_model = [x for x in sorted(os.listdir(model_path)) if x.endswith('.pkl')][-1]
+        except:
+            pass
+
 
     if latest_model is not None:
         checkpoint = torch.load(model_path + latest_model)
@@ -59,7 +63,7 @@ def main():
 
     total_num_batches = int(len(dataset) / batch_size)
 
-    for epoch in range(first_epoch, epochs):
+    for epoch in range(first_epoch+1, epochs):
         curr_batch = 0
         passes = 0
         for local_batch, local_labels in generator:

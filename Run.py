@@ -1,7 +1,7 @@
 """
 Big Picture:
-- use a 2D box of an object in scene (can get it from label or yolo eventually)
-- pass image cropped to object through the model
+- use the 2D box of an object in scene
+- pass cropped image of object through the model
 - net outputs dimension and oreintation, then calculate the location (T) using camera
     cal and lots of math
 - put the calculated 3d location onto 2d image using plot_regressed_3d_bbox
@@ -9,7 +9,7 @@ Big Picture:
 Plan:
 [x] reformat data structure to understand it better
 [x] use purely truth values from label for dimension and orient to test math
-[ ] regress dimension and orient from net
+[x] regress dimension and orient from net
 [ ] use yolo or rcnn to get the 2d box and class, so run from just an image (and cal)
 [ ] Try and optimize to be able to run on video
 [ ] Ros node eventually
@@ -19,15 +19,15 @@ Random TODOs:
 Notes:
 - The net outputs an angle (actually a sin and cos) relative to an angle defined
     by the # of bins, thus the # of bins used to train model should be known
-- Everything should be using radians, just for consistancy (old version used degrees, so careful!)
-- class should be used for average dimension to help net
+- Everything should be using radians, just for consistancy
+- output dimension is actually difference from the class average
 """
 
 
 from torch_lib.Dataset import *
 from library.Math import *
 from library.Plotting import *
-from torch_lib import Model
+from torch_lib import Model, ClassAverages
 
 import os
 import cv2
@@ -35,104 +35,44 @@ import cv2
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-from torchvision.models import vgg as V
+from torchvision.models import vgg
+import numpy as np
 
-
-debug_corners = False
+# to run car by car
 single_car = False
 
-# plot from net output. The orient should be global
-# after done testing math, can remove label param
-def plot_regressed_3d_bbox(img, truth_img, box_2d, dimensions, alpha, theta_ray, cam_to_img, label):
-
-    # use truth for now
-    truth_dims = label['Dimensions']
-    truth_orient = label['Ry']
+def plot_regressed_3d_bbox(img, truth_img, cam_to_img, box_2d, dimensions, alpha, theta_ray):
 
     # the math! returns X, the corners used for constraint
-    center, X = calc_location(dimensions, cam_to_img, box_2d, alpha, theta_ray)
+    location, X = calc_location(dimensions, cam_to_img, box_2d, alpha, theta_ray)
 
-    center = [center[0][0], center[1][0], center[2][0]]
-
-    truth_pose = label['Location']
-
-    print "Estimated pose:"
-    print center
-    print "Truth pose:"
-    print truth_pose
-    print "-------------"
+    orient = alpha + theta_ray
 
     plot_2d_box(truth_img, box_2d)
-    plot_3d_box(img, cam_to_img, truth_orient, truth_dims, center) # 3d boxes
+    plot_3d_box(img, cam_to_img, orient, dimensions, location) # 3d boxes
 
-    if debug_corners:
-        # plot the corners that were used
-        # these corners returned are the ones that are unrotated, because they were
-        # in the calculation. We must find the indicies of the corners used, then generate
-        # the roated corners and visualize those
-        left = X[0]
-        right = X[1]
-        # DEBUG with left and right as different colors
-        # corners = create_corners(truth_dims) # unrotated
-        corners = create_corners(dimensions) # unrotated
-
-        left_corner_indexes = [corners.index(i) for i in left] # get indexes
-        right_corner_indexes = [corners.index(i) for i in right] # get indexes
-
-        # get the rotated version
-        R = rotation_matrix(truth_orient)
-        # corners = create_corners(truth_dims, location=center, R=R)
-        # corners_used = [corners[i] for i in corner_indexes]
-        #
-        # # plot
-        # plot_3d_pts(img, corners_used, truth_pose, cam_to_img=cam_to_img, relative=False)
-
-        corners = create_corners(truth_dims, location=truth_pose, R=R)
-        left_corners_used = [corners[i] for i in left_corner_indexes]
-        right_corners_used = [corners[i] for i in right_corner_indexes]
-
-        # plot
-        for i, pt in enumerate(left_corners_used):
-            plot_3d_pts(truth_img, [pt], truth_pose, cam_to_img=cam_to_img, relative=False, constraint_idx=0)
-
-        for i, pt in enumerate(right_corners_used):
-            plot_3d_pts(truth_img, [pt], truth_pose, cam_to_img=cam_to_img, relative=False, constraint_idx=2)
-
-        plot_3d_box(truth_img, cam_to_img, truth_orient, truth_dims, truth_pose) # 3d boxes
-
-
-
+    return location
 
 def main():
 
-    # store_path = os.path.abspath(os.path.dirname(__file__)) + '/models'
-    # model_lst = [x for x in sorted(os.listdir(store_path)) if x.endswith('.pkl')]
-    # if len(model_lst) == 0:
-    #     print 'No previous model found, please check it'
-    #     exit()
-    # else:
-    #     print 'Find previous model %s'%model_lst[-1]
-    #     vgg = V.vgg19_bn(pretrained=False)
-    #     model = Model.Model(features=vgg.features, bins=2).cuda()
-    #     params = torch.load(store_path + '/%s'%model_lst[-1])
-    #     model.load_state_dict(params)
-    #     model.eval()
+    weights_path = os.path.abspath(os.path.dirname(__file__)) + '/weights'
+    model_lst = [x for x in sorted(os.listdir(weights_path)) if x.endswith('.pkl')]
+    if len(model_lst) == 0:
+        print 'No previous model found, please train first!'
+        exit()
+    else:
+        print 'Using previous model %s'%model_lst[-1]
+        my_vgg = vgg.vgg19_bn(pretrained=True)
+        #TODO model in Cuda throws an error
+        model = Model.Model(features=my_vgg.features, bins=2)
+        checkpoint = torch.load(weights_path + '/%s'%model_lst[-1])
+        model.load_state_dict(checkpoint['model_state_dict'])
+        model.eval()
 
     dataset = Dataset(os.path.abspath(os.path.dirname(__file__)) + '/eval')
-    #
-    # bins = model.bins
-    # centerAngle = np.zeros(bins)
-    # interval = 2 * np.pi / bins
-    # for i in range(1, bins):
-    #     centerAngle[i] = i*interval
-
-
-
-    # print dataset.total_num_objects(dataset.ids)
-    # exit()
+    averages = ClassAverages.ClassAverages()
 
     all_images = dataset.all_objects()
-
     for key in sorted(all_images.keys()):
         data = all_images[key]
 
@@ -144,48 +84,44 @@ def main():
         for object in objects:
             label = object.label
             theta_ray = object.theta_ray
-            batch = object.img
+            input_img = object.img
 
-            alpha = label['Alpha']
-            dimensions = label['Dimensions']
+            input_tensor = torch.zeros([1,3,224,224])
+            input_tensor[0,:,:,:] = input_img
+            input_tensor.cuda()
 
-            # batch = Variable(torch.FloatTensor(batch), requires_grad=False).cuda()
-            # [orient, conf, dim] = model(batch)
-            # orient = orient.cpu().data.numpy()[0, :, :]
-            # conf = conf.cpu().data.numpy()[0, :]
-            # dim = dim.cpu().data.numpy()[0, :]
-            # argmax = np.argmax(conf)
-            #
-            # orient = orient[argmax, :]
-            # cos = orient[0]
-            # sin = orient[1]
-            # theta = np.arctan2(sin, cos)
-            # theta = theta + centerAngle[argmax]
-            # theta = theta - np.pi
-            #
-            # print theta
-            # alpha = theta
-            print alpha
+            [orient, conf, dim] = model(input_tensor)
+            orient = orient.cpu().data.numpy()[0, :, :]
+            conf = conf.cpu().data.numpy()[0, :]
+            dim = dim.cpu().data.numpy()[0, :]
 
-            # exit()
+            dim += averages.get_item(label['Class'])
 
-            plot_regressed_3d_bbox(img, truth_img, label['Box_2D'], dimensions, alpha, theta_ray, cam_to_img, label)
+            argmax = np.argmax(conf)
+            orient = orient[argmax, :]
+            cos = orient[0]
+            sin = orient[1]
+            alpha = np.arctan2(sin, cos)
+            alpha += dataset.angle_bins[argmax]
+            alpha -= np.pi
 
+            location = plot_regressed_3d_bbox(img, truth_img, cam_to_img, label['Box_2D'], dim, alpha, theta_ray)
+
+            print 'Estimated pose: %s'%location
+            print 'Truth pose: %s'%label['Location']
+            print '-------------'
+
+            # plot car by car
             if single_car:
                 numpy_vertical = np.concatenate((truth_img, img), axis=0)
                 cv2.imshow('2D detection on top, 3D prediction on bottom', numpy_vertical)
                 cv2.waitKey(0)
 
-
+        # plot image by image
         if not single_car:
             numpy_vertical = np.concatenate((truth_img, img), axis=0)
             cv2.imshow('2D detection on top, 3D prediction on bottom', numpy_vertical)
             cv2.waitKey(0)
-
-
-
-
-
 
 if __name__ == '__main__':
     main()

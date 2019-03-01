@@ -95,6 +95,8 @@ class Dataset(data.Dataset):
 
                     objects.append((id, line_num))
 
+
+        self.averages.dump_to_file()
         return objects
 
 
