@@ -19,7 +19,7 @@ script will run until 100.
 ## Usage
 First, you must download the data from [Kitti](http://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=2d).
 You will need the left color images, the training labels, and the camera calibration matrices. Total is ~13GB.
-Put these folders into the Kitti/ directory
+Put these folders into the Kitti/ directory.
 To run in evaluation:
 ```
 python Run.py
