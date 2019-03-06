@@ -11,27 +11,40 @@ from library.File import *
 
 from ClassAverages import ClassAverages
 
+# TODO: clean up where this is
+def generate_bins(bins):
+    angle_bins = np.zeros(bins)
+    interval = 2 * np.pi / bins
+    for i in range(1,bins):
+        angle_bins[i] = i * interval
+    angle_bins += interval / 2 # center of the bin
+
+    return angle_bins
+
 class Dataset(data.Dataset):
     def __init__(self, path, bins=2, overlap=0.1):
 
         self.top_label_path = path + "/label_2/"
         self.top_img_path = path + "/image_2/"
         self.top_calib_path = path + "/calib/"
-
         # use a relative path instead?
+
+        # TODO: cal vs. projection
+        # this one looks a little off
         self.k = self.get_K(os.path.abspath(os.path.dirname(os.path.dirname(__file__)) + '/camera_cal/calib_cam_to_cam.txt'))
+
         self.ids = [x.split('.')[0] for x in sorted(os.listdir(self.top_img_path))] # name of file
         self.num_images = len(self.ids)
 
         # create angle bins
         self.bins = bins
-        self.overlap = overlap
         self.angle_bins = np.zeros(bins)
         self.interval = 2 * np.pi / bins
         for i in range(1,bins):
             self.angle_bins[i] = i * self.interval
         self.angle_bins += self.interval / 2 # center of the bin
 
+        self.overlap = overlap
         # ranges for confidence
         # [(min angle in bin, max angle in bin), ... ]
         self.bin_ranges = []
@@ -221,8 +234,9 @@ class Dataset(data.Dataset):
             data[id]['Image'] = img
 
             calib_path = self.top_calib_path + '%s.txt'%id
-            data[id]['Calib'] = get_calibration_cam_to_image(calib_path)
-
+            k = get_calibration_cam_to_image(calib_path)
+            data[id]['Calib'] = k
+            # data[id]['Calib'] = self.k
 
             label_path = self.top_label_path + '%s.txt'%id
             labels = self.parse_label(label_path)
@@ -230,7 +244,8 @@ class Dataset(data.Dataset):
             for label in labels:
                 box_2d = label['Box_2D']
                 detection_class = label['Class']
-                objects.append(DetectedObject(img, detection_class, box_2d, self.k, label=label))
+                objects.append(DetectedObject(img, detection_class, box_2d, k, label=label))
+                # objects.append(DetectedObject(img, detection_class, box_2d, self.k, label=label))
 
             data[id]['Objects'] = objects
 
@@ -244,11 +259,26 @@ is to keep this abstract enough so it can be used in combination with YOLO
 """
 class DetectedObject:
     def __init__(self, img, detection_class, box_2d, K, label=None):
+
+        if isinstance(K, str): # filename
+            K = get_calibration_cam_to_image(K)
+
+        self.K = K
         self.theta_ray = self.calc_theta_ray(img, box_2d, K)
         self.img = self.format_img(img, box_2d)
         self.label = label
         self.detection_class = detection_class
 
+
+    def get_K(self, cab_f):
+        for line in open(cab_f, 'r'):
+            if 'K_02' in line:
+                cam_K = line.strip().split(' ')
+                cam_K = np.asarray([float(cam_K) for cam_K in cam_K[1:]])
+                return_matrix = np.zeros((3,4))
+                return_matrix[:,:-1] = cam_K.reshape((3,3))
+
+        return return_matrix
 
     def calc_theta_ray(self, img, box_2d, K):
         width = img.shape[1]

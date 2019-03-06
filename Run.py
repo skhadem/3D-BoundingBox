@@ -1,26 +1,9 @@
 """
-Big Picture:
-- use the 2D box of an object in scene
-- pass cropped image of object through the model
-- net outputs dimension and oreintation, then calculate the location (T) using camera
-    cal and lots of math
-- put the calculated 3d location onto 2d image using plot_regressed_3d_bbox
-- visualize
-Plan:
-[x] reformat data structure to understand it better
-[x] use purely truth values from label for dimension and orient to test math
-[x] regress dimension and orient from net
-[ ] use yolo or rcnn to get the 2d box and class, so run from just an image (and cal)
-[ ] Try and optimize to be able to run on video
-[ ] Ros node eventually
-Random TODOs:
-[ ] loops inside of plotting functions
-[x] Move alot of functions to a library and import it
-Notes:
-- The net outputs an angle (actually a sin and cos) relative to an angle defined
-    by the # of bins, thus the # of bins used to train model should be known
-- Everything should be using radians, just for consistancy
-- output dimension is actually difference from the class average
+Images must be in ./Kitti/testing/image_2/ and camera matricies in ./Kitti/testing/calib/
+
+Uses YOLO to obtain 2D box, PyTorch to get 3D box, plots both
+
+SPACE bar for next image, any other key to exit
 """
 
 
@@ -39,8 +22,6 @@ from torch.autograd import Variable
 from torchvision.models import vgg
 import numpy as np
 
-# to run car by car
-single_car = False
 
 def plot_regressed_3d_bbox(img, truth_img, cam_to_img, box_2d, dimensions, alpha, theta_ray):
 
@@ -56,6 +37,7 @@ def plot_regressed_3d_bbox(img, truth_img, cam_to_img, box_2d, dimensions, alpha
 
 def main():
 
+    # load torch
     weights_path = os.path.abspath(os.path.dirname(__file__)) + '/weights'
     model_lst = [x for x in sorted(os.listdir(weights_path)) if x.endswith('.pkl')]
     if len(model_lst) == 0:
@@ -70,27 +52,43 @@ def main():
         model.load_state_dict(checkpoint['model_state_dict'])
         model.eval()
 
-    dataset = Dataset(os.path.abspath(os.path.dirname(__file__)) + '/eval')
-    averages = ClassAverages.ClassAverages()
-
+    # load yolo
     yolo_path = os.path.abspath(os.path.dirname(__file__)) + '/weights'
     yolo = cv_Yolo(yolo_path)
 
-    exit()
+    averages = ClassAverages.ClassAverages()
 
-    all_images = dataset.all_objects()
-    for key in sorted(all_images.keys()):
-        data = all_images[key]
+    # TODO: clean up how this is done
+    angle_bins = generate_bins(2)
 
-        truth_img = data['Image']
+    img_path = os.path.abspath(os.path.dirname(__file__)) + '/Kitti/testing/image_2/'
+    calib_path = os.path.abspath(os.path.dirname(__file__)) + '/Kitti/testing/calib/'
+    ids = [x.split('.')[0] for x in sorted(os.listdir(img_path))]
+
+    for id in ids:
+        img_file = img_path + id + ".png"
+        calib_file = calib_path + id + ".txt"
+        truth_img = cv2.imread(img_file)
         img = np.copy(truth_img)
-        objects = data['Objects']
-        cam_to_img = data['Calib']
+        yolo_img = np.copy(truth_img)
 
-        for object in objects:
-            label = object.label
+        detections = yolo.detect(yolo_img)
+
+        for detection in detections:
+
+            if not averages.recognized_class(detection.detected_class):
+                continue
+
+            # this is throwing when the 2d bbox is invalid
+            # TODO: better check
+            try:
+                object = DetectedObject(img, detection.detected_class, detection.box_2d, calib_file)
+            except:
+                continue
+
             theta_ray = object.theta_ray
             input_img = object.img
+            K = object.K
 
             input_tensor = torch.zeros([1,3,224,224])
             input_tensor[0,:,:,:] = input_img
@@ -101,33 +99,26 @@ def main():
             conf = conf.cpu().data.numpy()[0, :]
             dim = dim.cpu().data.numpy()[0, :]
 
-            dim += averages.get_item(label['Class'])
+            dim += averages.get_item(detection.detected_class)
 
             argmax = np.argmax(conf)
             orient = orient[argmax, :]
             cos = orient[0]
             sin = orient[1]
             alpha = np.arctan2(sin, cos)
-            alpha += dataset.angle_bins[argmax]
+            alpha += angle_bins[argmax]
             alpha -= np.pi
 
-            location = plot_regressed_3d_bbox(img, truth_img, cam_to_img, label['Box_2D'], dim, alpha, theta_ray)
+            location = plot_regressed_3d_bbox(img, truth_img, K, detection.box_2d, dim, alpha, theta_ray)
 
             print 'Estimated pose: %s'%location
-            print 'Truth pose: %s'%label['Location']
             print '-------------'
 
-            # plot car by car
-            if single_car:
-                numpy_vertical = np.concatenate((truth_img, img), axis=0)
-                cv2.imshow('2D detection on top, 3D prediction on bottom', numpy_vertical)
-                cv2.waitKey(0)
+        numpy_vertical = np.concatenate((truth_img, img), axis=0)
+        cv2.imshow('SPACE for next image, any other key to exit', numpy_vertical)
 
-        # plot image by image
-        if not single_car:
-            numpy_vertical = np.concatenate((truth_img, img), axis=0)
-            cv2.imshow('2D detection on top, 3D prediction on bottom', numpy_vertical)
-            cv2.waitKey(0)
+        if cv2.waitKey(0) != 32: # space bar
+            exit()
 
 if __name__ == '__main__':
     main()
