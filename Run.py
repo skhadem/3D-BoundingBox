@@ -28,6 +28,7 @@ from torch_lib.Dataset import *
 from library.Math import *
 from library.Plotting import *
 from torch_lib import Model, ClassAverages
+from yolo.yolo import cv_Yolo
 
 import os
 import cv2
@@ -71,6 +72,11 @@ def main():
 
     dataset = Dataset(os.path.abspath(os.path.dirname(__file__)) + '/eval')
     averages = ClassAverages.ClassAverages()
+
+    yolo_path = os.path.abspath(os.path.dirname(__file__)) + '/weights'
+    yolo = cv_Yolo(yolo_path)
+
+    exit()
 
     all_images = dataset.all_objects()
     for key in sorted(all_images.keys()):

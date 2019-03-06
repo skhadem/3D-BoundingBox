@@ -1,3 +1,4 @@
+*.weights
 *.pkl
 *.pyc
 *.swp
