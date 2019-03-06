@@ -56,8 +56,8 @@ def main():
         first_epoch = checkpoint['epoch']
         loss = checkpoint['loss']
 
-        print 'Found previous checkpoint: %s at epoch %s'%(latest_model, first_epoch)
-        print 'Resuming training....'
+        print('Found previous checkpoint: %s at epoch %s'%(latest_model, first_epoch))
+        print('Resuming training....')
 
 
 
@@ -90,7 +90,7 @@ def main():
 
 
             if passes % 10 == 0:
-                print "--- epoch %s | batch %s/%s --- [loss: %s]" %(epoch, curr_batch, total_num_batches, loss.item())
+                print("--- epoch %s | batch %s/%s --- [loss: %s]" %(epoch, curr_batch, total_num_batches, loss.item()))
                 passes = 0
 
             passes += 1
@@ -99,16 +99,16 @@ def main():
         # save after every 10 epochs
         if epoch % 10 == 0:
             name = model_path + 'epoch_%s.pkl' % epoch
-            print "===================="
-            print "Done with epoch %s!" % epoch
-            print "Saving weights as %s ..." % name
+            print("====================")
+            print ("Done with epoch %s!" % epoch)
+            print ("Saving weights as %s ..." % name)
             torch.save({
                     'epoch': epoch,
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': opt_SGD.state_dict(),
                     'loss': loss
                     }, name)
-            print "===================="
+            print("====================")
 
 if __name__=='__main__':
     main()

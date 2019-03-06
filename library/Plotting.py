@@ -3,8 +3,8 @@ import numpy as np
 from enum import Enum
 import itertools
 
-from File import *
-from Math import *
+from .File import *
+from .Math import *
 
 class cv_colors(Enum):
     RED = (0,0,255)

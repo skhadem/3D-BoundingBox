@@ -9,7 +9,7 @@ from torch.utils import data
 
 from library.File import *
 
-from ClassAverages import ClassAverages
+from .ClassAverages import ClassAverages
 
 class Dataset(data.Dataset):
     def __init__(self, path, bins=2, overlap=0.1):

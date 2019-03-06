@@ -58,10 +58,10 @@ def main():
     weights_path = os.path.abspath(os.path.dirname(__file__)) + '/weights'
     model_lst = [x for x in sorted(os.listdir(weights_path)) if x.endswith('.pkl')]
     if len(model_lst) == 0:
-        print 'No previous model found, please train first!'
+        print('No previous model found, please train first!')
         exit()
     else:
-        print 'Using previous model %s'%model_lst[-1]
+        print('Using previous model %s'%model_lst[-1])
         my_vgg = vgg.vgg19_bn(pretrained=True)
         #TODO model in Cuda throws an error
         model = Model.Model(features=my_vgg.features, bins=2)
@@ -107,9 +107,9 @@ def main():
 
             location = plot_regressed_3d_bbox(img, truth_img, cam_to_img, label['Box_2D'], dim, alpha, theta_ray)
 
-            print 'Estimated pose: %s'%location
-            print 'Truth pose: %s'%label['Location']
-            print '-------------'
+            print('Estimated pose: %s'%location)
+            print('Truth pose: %s'%label['Location'])
+            print('-------------')
 
             # plot car by car
             if single_car:
