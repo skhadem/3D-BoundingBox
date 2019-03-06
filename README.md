@@ -6,6 +6,10 @@ PyTorch implementation for this [paper](https://arxiv.org/abs/1612.00496).
 
 ![example](http://soroushkhadem.com/img/2d-top-3d-bottom1.png)
 
+## Requirements
+- PyTorch
+- OpenCV >= 3.4.3
+
 ## Usage
 Download the weights:
 ```
