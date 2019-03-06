@@ -30,7 +30,7 @@ is used to project a 3D box onto the image.
 Camera projection matrices are also needed for every image (given by Kitti).
 
 ```
-pyhthon Run_no_yolo.py
+python Run_no_yolo.py
 ```
 Will process all the images in eval/, using the label to get 2D box instead of YOLO.
 
