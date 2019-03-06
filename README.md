@@ -19,6 +19,9 @@ To run in evaluation:
 ```
 python Run.py
 ```
+>Note: This script expects images in `./Kitti/testing/image_2/` and corresponding projection matricies
+in `./Kitti/testing/calib/`. See [training](#training) for where to download data from.
+
 Press SPACE to process next image, and any other key to exit.
 This will visualize the 3d bounding box for all the images in Kitti/testing/. The image is passed
 through YOLOv3 pre-trained on the COCO dataset to make 2D bounding box detections, which is then

@@ -89,6 +89,8 @@ def main():
             theta_ray = object.theta_ray
             input_img = object.img
             K = object.K
+            box_2d = detection.box_2d
+            detected_class = detection.detected_class
 
             input_tensor = torch.zeros([1,3,224,224])
             input_tensor[0,:,:,:] = input_img
@@ -99,7 +101,7 @@ def main():
             conf = conf.cpu().data.numpy()[0, :]
             dim = dim.cpu().data.numpy()[0, :]
 
-            dim += averages.get_item(detection.detected_class)
+            dim += averages.get_item(detected_class)
 
             argmax = np.argmax(conf)
             orient = orient[argmax, :]
@@ -109,7 +111,7 @@ def main():
             alpha += angle_bins[argmax]
             alpha -= np.pi
 
-            location = plot_regressed_3d_bbox(img, truth_img, K, detection.box_2d, dim, alpha, theta_ray)
+            location = plot_regressed_3d_bbox(img, truth_img, K, box_2d, dim, alpha, theta_ray)
 
             print 'Estimated pose: %s'%location
             print '-------------'
