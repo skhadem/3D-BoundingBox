@@ -178,7 +178,7 @@ def calc_location(dimension, K, box_2d, alpha, theta_ray):
             b[row] = box_corners[row] * M[2,3] - M[index,3]
 
         # solve here with least squares, since over fit will get some error
-        loc, error, rank, s = np.linalg.lstsq(A, b)
+        loc, error, rank, s = np.linalg.lstsq(A, b, rcond=None)
 
         # found a better estimation
         if error < best_error:
