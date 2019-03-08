@@ -14,13 +14,15 @@ from torch_lib import Model, ClassAverages
 from yolo.yolo import cv_Yolo
 
 import os
+import time
+
+import numpy as np
 import cv2
 
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from torchvision.models import vgg
-import numpy as np
 
 
 def plot_regressed_3d_bbox(img, truth_img, cam_to_img, box_2d, dimensions, alpha, theta_ray):
@@ -66,6 +68,9 @@ def main():
     ids = [x.split('.')[0] for x in sorted(os.listdir(img_path))]
 
     for id in ids:
+        
+        start_time = time.time()
+
         img_file = img_path + id + ".png"
         calib_file = calib_path + id + ".txt"
         truth_img = cv2.imread(img_file)
@@ -114,11 +119,13 @@ def main():
             location = plot_regressed_3d_bbox(img, truth_img, K, box_2d, dim, alpha, theta_ray)
 
             print('Estimated pose: %s'%location)
-            print('-------------')
 
         numpy_vertical = np.concatenate((truth_img, img), axis=0)
         cv2.imshow('SPACE for next image, any other key to exit', numpy_vertical)
 
+        print("\n")
+        print('Got %s poses in %.3f seconds'%(len(detections), time.time() - start_time))
+        print('-------------')
         if cv2.waitKey(0) != 32: # space bar
             exit()
 
