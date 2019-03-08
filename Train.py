@@ -63,7 +63,7 @@ def main():
 
     total_num_batches = int(len(dataset) / batch_size)
 
-    for epoch in range(first_epoch+1, epochs):
+    for epoch in range(first_epoch+1, epochs+1):
         curr_batch = 0
         passes = 0
         for local_batch, local_labels in generator:
