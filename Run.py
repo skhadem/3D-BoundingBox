@@ -48,7 +48,7 @@ def main():
     else:
         print('Using previous model %s'%model_lst[-1])
         my_vgg = vgg.vgg19_bn(pretrained=True)
-        #TODO model in Cuda throws an error
+        # TODO: load bins from file or something
         model = Model.Model(features=my_vgg.features, bins=2).cuda()
         checkpoint = torch.load(weights_path + '/%s'%model_lst[-1])
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -64,15 +64,25 @@ def main():
     angle_bins = generate_bins(2)
 
     img_path = os.path.abspath(os.path.dirname(__file__)) + '/Kitti/testing/image_2/'
+
+    # using P from each frame
     calib_path = os.path.abspath(os.path.dirname(__file__)) + '/Kitti/testing/calib/'
+
+    # using P_rect from global calibration file
+    # calib_path = os.path.abspath(os.path.dirname(__file__)) + '/camera_cal/'
+    # calib_file = calib_path + "calib_cam_to_cam.txt"
+
     ids = [x.split('.')[0] for x in sorted(os.listdir(img_path))]
 
     for id in ids:
-        
+
         start_time = time.time()
 
         img_file = img_path + id + ".png"
+
+        # P for each frame
         calib_file = calib_path + id + ".txt"
+
         truth_img = cv2.imread(img_file)
         img = np.copy(truth_img)
         yolo_img = np.copy(truth_img)
@@ -93,7 +103,7 @@ def main():
 
             theta_ray = object.theta_ray
             input_img = object.img
-            K = object.K
+            proj_matrix = object.proj_matrix
             box_2d = detection.box_2d
             detected_class = detection.detected_class
 
@@ -115,7 +125,7 @@ def main():
             alpha += angle_bins[argmax]
             alpha -= np.pi
 
-            location = plot_regressed_3d_bbox(img, truth_img, K, box_2d, dim, alpha, theta_ray)
+            location = plot_regressed_3d_bbox(img, truth_img, proj_matrix, box_2d, dim, alpha, theta_ray)
 
             print('Estimated pose: %s'%location)
 

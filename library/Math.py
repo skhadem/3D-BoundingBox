@@ -52,7 +52,7 @@ def create_corners(dimension, location=None, R=None):
 # this is based on the paper. Math!
 # calib is a 3x4 matrix, box_2d is [(xmin, ymin), (xmax, ymax)]
 # Math help: http://ywpkwon.github.io/pdf/bbox3d-study.pdf
-def calc_location(dimension, K, box_2d, alpha, theta_ray):
+def calc_location(dimension, proj_matrix, box_2d, alpha, theta_ray):
     #global orientation
     orient = alpha + theta_ray
     R = rotation_matrix(orient)
@@ -172,7 +172,7 @@ def calc_location(dimension, K, box_2d, alpha, theta_ray):
             RX = np.dot(R, X)
             M[:3,3] = RX.reshape(3)
 
-            M = np.dot(K, M)
+            M = np.dot(proj_matrix, M)
 
             A[row, :] = M[index,:3] - box_corners[row] * M[2,:3]
             b[row] = box_corners[row] * M[2,3] - M[index,3]

@@ -1,25 +1,30 @@
+"""
+Functions to read from files
+TODO: move the functions that read label from Dataset into here
+"""
 import numpy as np
 
-# read camera cal file and get intrinsic params
-# this is actually the projection matrix
+
 def get_calibration_cam_to_image(cab_f):
     for line in open(cab_f):
         if 'P2:' in line:
             cam_to_img = line.strip().split(' ')
             cam_to_img = np.asarray([float(number) for number in cam_to_img[1:]])
             cam_to_img = np.reshape(cam_to_img, (3, 4))
-            # cam_to_img[:,3] = 1
             return cam_to_img
 
-def get_K(cab_f):
-    for line in open(cab_f):
-        if 'K_02' in line:
-            cam_K = line.strip().split(' ')
-            cam_K = np.asarray([float(cam_K) for cam_K in cam_K[1:]])
-            return_matrix = np.zeros((3,4))
-            return_matrix[:,:-1] = cam_K.reshape((3,3))
+    file_not_found(cab_f)
 
-    return return_matrix
+def get_P(cab_f):
+    for line in open(cab_f):
+        if 'P_rect_02' in line:
+            cam_P = line.strip().split(' ')
+            cam_P = np.asarray([float(cam_P) for cam_P in cam_P[1:]])
+            return_matrix = np.zeros((3,4))
+            return_matrix = cam_P.reshape((3,4))
+            return return_matrix
+
+    file_not_found(cab_f)
 
 def get_R0(cab_f):
     for line in open(cab_f):
@@ -46,3 +51,7 @@ def get_tr_to_velo(cab_f):
             Tr_to_velo[:3,:4] = Tr
 
             return Tr_to_velo
+
+def file_not_found(filename):
+    print("\nError! Can't read calibration file, does %s exist?"%filename)
+    exit()
