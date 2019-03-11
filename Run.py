@@ -49,7 +49,7 @@ def main():
         print('Using previous model %s'%model_lst[-1])
         my_vgg = vgg.vgg19_bn(pretrained=True)
         #TODO model in Cuda throws an error
-        model = Model.Model(features=my_vgg.features, bins=2)
+        model = Model.Model(features=my_vgg.features, bins=2).cuda()
         checkpoint = torch.load(weights_path + '/%s'%model_lst[-1])
         model.load_state_dict(checkpoint['model_state_dict'])
         model.eval()
@@ -97,9 +97,8 @@ def main():
             box_2d = detection.box_2d
             detected_class = detection.detected_class
 
-            input_tensor = torch.zeros([1,3,224,224])
+            input_tensor = torch.zeros([1,3,224,224]).cuda()
             input_tensor[0,:,:,:] = input_img
-            input_tensor.cuda()
 
             [orient, conf, dim] = model(input_tensor)
             orient = orient.cpu().data.numpy()[0, :, :]

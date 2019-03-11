@@ -80,6 +80,8 @@ class cv_Yolo:
 
                 box_2d = [top_left, bottom_right]
                 class_ = self.get_class(class_ids[i])
+                if class_ == "person":
+                    class_ = "pedestrian"
 
                 detections.append(Detection(box_2d, class_))
 

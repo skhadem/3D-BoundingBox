@@ -19,6 +19,7 @@ def main():
     alpha = 0.6
     w = 0.4
 
+    print("Loading all detected objects in dataset...")
 
     train_path = os.path.abspath(os.path.dirname(__file__)) + '/Kitti/training'
     dataset = Dataset(train_path)
