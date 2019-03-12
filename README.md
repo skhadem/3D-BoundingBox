@@ -8,7 +8,7 @@ PyTorch implementation for this [paper](https://arxiv.org/abs/1612.00496).
 
 At the moment, it takes approximately 0.4s per frame, depending on the number of objects
 detected. An improvement will be speed upgrades soon. Here is the current fastest possible:
-![example-video](http://soroushkhadem.com/video/3d-bbox-vid.gif)
+![example-video](https://soroushkhadem.com/video/3d-bbox-vid.gif)
 
 ## Requirements
 - PyTorch
