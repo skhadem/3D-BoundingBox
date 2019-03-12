@@ -4,7 +4,11 @@ If interested, join the slack workspace where the paper is discussed, issues are
 ## Introduction
 PyTorch implementation for this [paper](https://arxiv.org/abs/1612.00496).
 
-![example](http://soroushkhadem.com/img/2d-top-3d-bottom1.png)
+![example-image](http://soroushkhadem.com/img/2d-top-3d-bottom1.png)
+
+At the moment, it takes approximately 0.4s per frame, depending on the number of objects
+detected. An improvement will be speed upgrades soon. Here is the current fastest possible:
+![example-video](http://soroushkhadem.com/img/3d-bbox-video1.mp4)
 
 ## Requirements
 - PyTorch
@@ -19,10 +23,22 @@ cd weights/
 This will download the weights I have trained and also the YOLOv3 weights from the
 official yolo [site](https://pjreddie.com/darknet/yolo/).
 
-To run in evaluation:
+To see options:
 ```
-python Run.py
+python Run.py --help
 ```
+
+Run through all images in default directory (eval/image_2/):
+```
+python Run.py [--show-yolo]
+```
+
+Run through default video:
+```
+python Run.py --video [--hide-debug]
+```
+
+
 >Note: This script expects images in `./Kitti/testing/image_2/` and corresponding projection matricies
 in `./Kitti/testing/calib/`. See [training](#training) for where to download data from.
 

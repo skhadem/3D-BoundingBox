@@ -24,7 +24,8 @@ def get_P(cab_f):
             return_matrix = cam_P.reshape((3,4))
             return return_matrix
 
-    file_not_found(cab_f)
+    # try other type of file
+    return get_calibration_cam_to_image
 
 def get_R0(cab_f):
     for line in open(cab_f):

@@ -24,20 +24,56 @@ import torch.nn as nn
 from torch.autograd import Variable
 from torchvision.models import vgg
 
+import argparse
 
-def plot_regressed_3d_bbox(img, truth_img, cam_to_img, box_2d, dimensions, alpha, theta_ray):
+def str2bool(v):
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument("--image-dir", default="eval/image_2/",
+                    help="Relative path to the directory containing images to detect. Default \
+                    is eval/image_2/")
+
+# TODO: support multiple cal matrix input types
+parser.add_argument("--cal-dir", default="camera_cal/",
+                    help="Relative path to the directory containing camera calibration form KITTI. \
+                    Default is camera_cal/")
+
+parser.add_argument("--video", action="store_true",
+                    help="Weather or not to advance frame-by-frame as fast as possible. \
+                    By default, this will pull images from ./eval/video")
+
+parser.add_argument("--show-yolo", action="store_true",
+                    help="Show the 2D BoundingBox detecions on a separate image")
+
+parser.add_argument("--hide-debug", action="store_true",
+                    help="Supress the printing of each 3d location")
+
+
+def plot_regressed_3d_bbox(img, cam_to_img, box_2d, dimensions, alpha, theta_ray, img_2d=None):
 
     # the math! returns X, the corners used for constraint
     location, X = calc_location(dimensions, cam_to_img, box_2d, alpha, theta_ray)
 
     orient = alpha + theta_ray
 
-    plot_2d_box(truth_img, box_2d)
+    if img_2d is not None:
+        plot_2d_box(img_2d, box_2d)
+
     plot_3d_box(img, cam_to_img, orient, dimensions, location) # 3d boxes
 
     return location
 
 def main():
+
+    FLAGS = parser.parse_args()
 
     # load torch
     weights_path = os.path.abspath(os.path.dirname(__file__)) + '/weights'
@@ -60,19 +96,30 @@ def main():
 
     averages = ClassAverages.ClassAverages()
 
-    # TODO: clean up how this is done
+    # TODO: clean up how this is done. flag?
     angle_bins = generate_bins(2)
 
-    img_path = os.path.abspath(os.path.dirname(__file__)) + '/Kitti/testing/image_2/'
+    image_dir = FLAGS.image_dir
+    cal_dir = FLAGS.cal_dir
+    if FLAGS.video:
+        if FLAGS.image_dir == "eval/image_2/" and FLAGS.cal_dir == "camera_cal/":
+            image_dir = "eval/video/2011_09_26/image_2/"
+            cal_dir = "eval/video/2011_09_26/"
+
+
+    img_path = os.path.abspath(os.path.dirname(__file__)) + "/" + image_dir
+    # using P_rect from global calibration file
+    calib_path = os.path.abspath(os.path.dirname(__file__)) + "/" + cal_dir
+    calib_file = calib_path + "calib_cam_to_cam.txt"
 
     # using P from each frame
-    calib_path = os.path.abspath(os.path.dirname(__file__)) + '/Kitti/testing/calib/'
+    # calib_path = os.path.abspath(os.path.dirname(__file__)) + '/Kitti/testing/calib/'
 
-    # using P_rect from global calibration file
-    # calib_path = os.path.abspath(os.path.dirname(__file__)) + '/camera_cal/'
-    # calib_file = calib_path + "calib_cam_to_cam.txt"
-
-    ids = [x.split('.')[0] for x in sorted(os.listdir(img_path))]
+    try:
+        ids = [x.split('.')[0] for x in sorted(os.listdir(img_path))]
+    except:
+        print("\nError: no images in %s"%img_path)
+        exit()
 
     for id in ids:
 
@@ -81,7 +128,7 @@ def main():
         img_file = img_path + id + ".png"
 
         # P for each frame
-        calib_file = calib_path + id + ".txt"
+        # calib_file = calib_path + id + ".txt"
 
         truth_img = cv2.imread(img_file)
         img = np.copy(truth_img)
@@ -125,18 +172,30 @@ def main():
             alpha += angle_bins[argmax]
             alpha -= np.pi
 
-            location = plot_regressed_3d_bbox(img, truth_img, proj_matrix, box_2d, dim, alpha, theta_ray)
+            if FLAGS.show_yolo:
+                location = plot_regressed_3d_bbox(img, proj_matrix, box_2d, dim, alpha, theta_ray, truth_img)
+            else:
+                location = plot_regressed_3d_bbox(img, proj_matrix, box_2d, dim, alpha, theta_ray)
 
-            print('Estimated pose: %s'%location)
+            if not FLAGS.hide_debug:
+                print('Estimated pose: %s'%location)
 
-        numpy_vertical = np.concatenate((truth_img, img), axis=0)
-        cv2.imshow('SPACE for next image, any other key to exit', numpy_vertical)
+        if FLAGS.show_yolo:
+            numpy_vertical = np.concatenate((truth_img, img), axis=0)
+            cv2.imshow('SPACE for next image, any other key to exit', numpy_vertical)
+        else:
+            cv2.imshow('3D detections', img)
 
-        print("\n")
-        print('Got %s poses in %.3f seconds'%(len(detections), time.time() - start_time))
-        print('-------------')
-        if cv2.waitKey(0) != 32: # space bar
-            exit()
+        if not FLAGS.hide_debug:
+            print("\n")
+            print('Got %s poses in %.3f seconds'%(len(detections), time.time() - start_time))
+            print('-------------')
+
+        if FLAGS.video:
+            cv2.waitKey(1)
+        else:
+            if cv2.waitKey(0) != 32: # space bar
+                exit()
 
 if __name__ == '__main__':
     main()
