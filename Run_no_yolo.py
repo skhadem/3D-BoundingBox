@@ -1,29 +1,6 @@
 """
-Big Picture:
-- use the 2D box of an object in scene
-- pass cropped image of object through the model
-- net outputs dimension and oreintation, then calculate the location (T) using camera
-    cal and lots of math
-- put the calculated 3d location onto 2d image using plot_regressed_3d_bbox
-- visualize
-Plan:
-[x] reformat data structure to understand it better
-[x] use purely truth values from label for dimension and orient to test math
-[x] regress dimension and orient from net
-[x] use yolo or rcnn to get the 2d box and class, so run from just an image (and cal)
-[ ] Try and optimize to be able to run on video
-[ ] Ros node eventually
-Random TODOs:
-[ ] loops inside of plotting functions
-[x] Move alot of functions to a library and import it
-Notes:
-- The net outputs an angle (actually a sin and cos) relative to an angle defined
-    by the # of bins, thus the # of bins used to train model should be known
-- Everything should be using radians, just for consistancy
-- output dimension is actually difference from the class average
+This script will use the 2D box from the label rather than from YOLO
 """
-
-
 from torch_lib.Dataset import *
 from library.Math import *
 from library.Plotting import *
