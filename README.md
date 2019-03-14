@@ -37,7 +37,7 @@ python Run.py [--show-yolo]
 >Note: See [training](#training) for where to download the data from
 
 There is also a script provided to download the default video from Kitti in ./eval/video. Or,
-download any Kitti video and corresponding weights and use `--image-dir` and `--cal-dir` to
+download any Kitti video and corresponding calibration and use `--image-dir` and `--cal-dir` to
 specify where to get the frames from.
 ```
 python Run.py --video [--hide-debug]
