@@ -1,5 +1,5 @@
 ```
-3D-BoundingBox/Kitti/training 
+3D-BoundingBox/Kitti 
 └─── training
     └─── image_2
     	│   *.PNG (Image files, ex:000000.png)
