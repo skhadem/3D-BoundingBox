@@ -121,11 +121,11 @@ def main():
         print("\nError: no images in %s"%img_path)
         exit()
 
-    for id in ids:
+    for img_id in ids:
 
         start_time = time.time()
 
-        img_file = img_path + id + ".png"
+        img_file = img_path + img_id + ".png"
 
         # P for each frame
         # calib_file = calib_path + id + ".txt"
@@ -144,13 +144,13 @@ def main():
             # this is throwing when the 2d bbox is invalid
             # TODO: better check
             try:
-                object = DetectedObject(img, detection.detected_class, detection.box_2d, calib_file)
+                detectedObject = DetectedObject(img, detection.detected_class, detection.box_2d, calib_file)
             except:
                 continue
 
-            theta_ray = object.theta_ray
-            input_img = object.img
-            proj_matrix = object.proj_matrix
+            theta_ray = detectedObject.theta_ray
+            input_img = detectedObject.img
+            proj_matrix = detectedObject.proj_matrix
             box_2d = detection.box_2d
             detected_class = detection.detected_class
 

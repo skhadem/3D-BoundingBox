@@ -1,5 +1,7 @@
 """
-This script will use the 2D box from the label rather than from YOLO
+This script will use the 2D box from the label rather than from YOLO,
+but will still use the neural nets to get the 3D position and plot onto the
+image. Press space for next image and escape to quit
 """
 from torch_lib.Dataset import *
 from library.Math import *
@@ -8,6 +10,7 @@ from torch_lib import Model, ClassAverages
 
 import os
 import cv2
+import time
 
 import torch
 import torch.nn as nn
@@ -40,17 +43,20 @@ def main():
     else:
         print ('Using previous model %s'%model_lst[-1])
         my_vgg = vgg.vgg19_bn(pretrained=True)
-        #TODO model in Cuda throws an error
-        model = Model.Model(features=my_vgg.features, bins=2)
+        model = Model.Model(features=my_vgg.features, bins=2).cuda()
         checkpoint = torch.load(weights_path + '/%s'%model_lst[-1])
         model.load_state_dict(checkpoint['model_state_dict'])
         model.eval()
 
+    # defaults to /eval
     dataset = Dataset(os.path.abspath(os.path.dirname(__file__)) + '/eval')
     averages = ClassAverages.ClassAverages()
 
     all_images = dataset.all_objects()
     for key in sorted(all_images.keys()):
+
+        start_time = time.time()
+
         data = all_images[key]
 
         truth_img = data['Image']
@@ -58,12 +64,12 @@ def main():
         objects = data['Objects']
         cam_to_img = data['Calib']
 
-        for object in objects:
-            label = object.label
-            theta_ray = object.theta_ray
-            input_img = object.img
+        for detectedObject in objects:
+            label = detectedObject.label
+            theta_ray = detectedObject.theta_ray
+            input_img = detectedObject.img
 
-            input_tensor = torch.zeros([1,3,224,224])
+            input_tensor = torch.zeros([1,3,224,224]).cuda()
             input_tensor[0,:,:,:] = input_img
             input_tensor.cuda()
 
@@ -94,11 +100,14 @@ def main():
                 cv2.imshow('2D detection on top, 3D prediction on bottom', numpy_vertical)
                 cv2.waitKey(0)
 
+        print('Got %s poses in %.3f seconds\n'%(len(objects), time.time() - start_time))
+
         # plot image by image
         if not single_car:
             numpy_vertical = np.concatenate((truth_img, img), axis=0)
             cv2.imshow('2D detection on top, 3D prediction on bottom', numpy_vertical)
-            cv2.waitKey(0)
+            if cv2.waitKey(0) == 27:
+                return
 
 if __name__ == '__main__':
     main()
