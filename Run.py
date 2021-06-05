@@ -88,7 +88,7 @@ def main():
         print('Using previous model %s'%model_lst[-1])
         my_vgg = vgg.vgg19_bn(pretrained=True)
         # TODO: load bins from file or something
-        model = if FLAGS.run_on_cpu == True :
+        if FLAGS.run_on_cpu == True :
             model = Model.Model(features=my_vgg.features, bins=2)#.cuda()
             checkpoint = torch.load(weights_path + '/%s'%model_lst[-1], map_location=torch.device('cpu'))
         else:
