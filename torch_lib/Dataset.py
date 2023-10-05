@@ -31,8 +31,12 @@ class Dataset(data.Dataset):
 
         # TODO: which camera cal to use, per frame or global one?
         # Get global from replictor cameraParams
-        self.proj_matrix = get_P(os.path.abspath(os.path.dirname(os.path.dirname(__file__)) + '/camera_cal/calib_cam_to_cam.txt'))
-
+        # self.proj_matrix = get_P(os.path.abspath(os.path.dirname(os.path.dirname(__file__)) + '/camera_cal/calib_cam_to_cam.txt'))
+        self.proj_matrix = np.array([
+            [ 2.29062286,  0,  0,  0],
+            [ 0,  3.66499658,  0,  0],
+            [ 0,  0,  1.00000100e-06,  1.00000100e+00]
+        ])
         self.ids = [x.split('.')[0] for x in sorted(os.listdir(self.top_img_path))] # name of file
         self.num_images = len(self.ids)
 
@@ -53,7 +57,7 @@ class Dataset(data.Dataset):
                                 (i*self.interval + self.interval + overlap) % (2*np.pi)) )
 
         # hold average dimensions
-        class_list = ['Car', 'Van', 'Truck', 'Pedestrian','Person_sitting', 'Cyclist', 'Tram', 'Pallet', 'Misc']
+        class_list = ['Pallet']
         self.averages = ClassAverages(class_list)
 
         self.object_list = self.get_objects(self.ids)
@@ -173,7 +177,6 @@ class Dataset(data.Dataset):
         label = {
                 'Class': Class,
                 'Box_2D': Box_2D,
-                'Dimensions': Dimension,
                 'Alpha': Alpha,
                 'Orientation': Orientation,
                 'Confidence': Confidence
@@ -208,7 +211,6 @@ class Dataset(data.Dataset):
                 buf.append({
                         'Class': Class,
                         'Box_2D': Box_2D,
-                        'Dimensions': Dimension,
                         'Location': Location,
                         'Alpha': Alpha,
                         'Ry': Ry

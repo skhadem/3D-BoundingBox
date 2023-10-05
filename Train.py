@@ -46,6 +46,19 @@ def make_parser():
         help="Path to save checkpoints",
         default="weights"
     )
+    parser.add_argument(
+        "-a",
+        "--alpha",
+        type=float,
+        default=0.6,
+        help="L_dims loss coefficient"
+    )
+    parser.add_argument(
+        "-w",
+        type=float,
+        default=0.4,
+        help="L_loc loss coefficient"
+    )
     return parser
 
 
@@ -56,8 +69,8 @@ def main():
     # hyper parameters
     epochs = args.epochs
     batch_size = args.batch_size
-    alpha = 0.6
-    w = 0.4
+    alpha = args.alpha # scale L_dims (see paper for details)
+    w = args.w # scale L_loc (see paper for details)
 
     print("Loading all detected objects in dataset...")
     train_path = (
@@ -75,7 +88,6 @@ def main():
         model.parameters(), lr=args.learning_rate, momentum=args.momentum
     )
     conf_loss_func = nn.CrossEntropyLoss().cuda()
-    dim_loss_func = nn.MSELoss().cuda()
     orient_loss_func = OrientationLoss
 
     first_epoch = 0
@@ -98,19 +110,15 @@ def main():
         for local_batch, local_labels in generator:
             truth_orient = local_labels["Orientation"].float().cuda()
             truth_conf = local_labels["Confidence"].long().cuda()
-            truth_dim = local_labels["Dimensions"].float().cuda()
 
             local_batch = local_batch.float().cuda()
-            [orient, conf, dim] = model(local_batch)
+            [orient, conf] = model(local_batch)
 
             orient_loss = orient_loss_func(orient, truth_orient, truth_conf)
-            dim_loss = dim_loss_func(dim, truth_dim)
-
             truth_conf = torch.max(truth_conf, dim=1)[1]
             conf_loss = conf_loss_func(conf, truth_conf)
 
-            loss_theta = conf_loss + w * orient_loss
-            loss = alpha * dim_loss + loss_theta
+            loss = conf_loss + w * orient_loss
 
             opt_SGD.zero_grad()
             loss.backward()
