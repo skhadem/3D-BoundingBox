@@ -30,6 +30,7 @@ class Dataset(data.Dataset):
         # use a relative path instead?
 
         # TODO: which camera cal to use, per frame or global one?
+        # Get global from replictor cameraParams
         self.proj_matrix = get_P(os.path.abspath(os.path.dirname(os.path.dirname(__file__)) + '/camera_cal/calib_cam_to_cam.txt'))
 
         self.ids = [x.split('.')[0] for x in sorted(os.listdir(self.top_img_path))] # name of file
@@ -52,7 +53,7 @@ class Dataset(data.Dataset):
                                 (i*self.interval + self.interval + overlap) % (2*np.pi)) )
 
         # hold average dimensions
-        class_list = ['Car', 'Van', 'Truck', 'Pedestrian','Person_sitting', 'Cyclist', 'Tram', 'Misc']
+        class_list = ['Car', 'Van', 'Truck', 'Pedestrian','Person_sitting', 'Cyclist', 'Tram', 'Pallet', 'Misc']
         self.averages = ClassAverages(class_list)
 
         self.object_list = self.get_objects(self.ids)
@@ -144,8 +145,8 @@ class Dataset(data.Dataset):
 
         Alpha = line[3] # what we will be regressing
         Ry = line[14]
-        top_left = (int(round(line[4])), int(round(line[5])))
-        bottom_right = (int(round(line[6])), int(round(line[7])))
+        top_left = (int(round(line[5])), int(round(line[4])))
+        bottom_right = (int(round(line[7])), int(round(line[6])))
         Box_2D = [top_left, bottom_right]
 
         Dimension = np.array([line[8], line[9], line[10]], dtype=np.double) # height, width, length
@@ -196,8 +197,8 @@ class Dataset(data.Dataset):
 
                 Alpha = line[3] # what we will be regressing
                 Ry = line[14]
-                top_left = (int(round(line[4])), int(round(line[5])))
-                bottom_right = (int(round(line[6])), int(round(line[7])))
+                top_left = (int(round(line[5])), int(round(line[4])))
+                bottom_right = (int(round(line[7])), int(round(line[6])))
                 Box_2D = [top_left, bottom_right]
 
                 Dimension = [line[8], line[9], line[10]] # height, width, length
@@ -223,9 +224,9 @@ class Dataset(data.Dataset):
             img = cv2.imread(img_path)
             data[id]['Image'] = img
 
-            # using p per frame
-            calib_path = self.top_calib_path + '%s.txt'%id
-            proj_matrix = get_calibration_cam_to_image(calib_path)
+            # We want to use constant matrix
+            # calib_path = self.top_calib_path + '%s.txt'%id
+            # proj_matrix = get_calibration_cam_to_image(calib_path)
 
             # using P_rect from global calib file
             proj_matrix = self.proj_matrix

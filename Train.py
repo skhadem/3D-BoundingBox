@@ -10,70 +10,97 @@ from torch.utils import data
 
 
 import os
+from argparse import ArgumentParser
+
+
+def make_parser():
+    parser = ArgumentParser()
+    parser.add_argument(
+        "-d",
+        "--data",
+        default="/home/thoro-ml/work/ml/3D-BoundingBox/Pallet-dataset/training/",
+        help="Path to data root",
+    )
+    parser.add_argument("-bs", "--batch-size", type=int, default=8, help="Batch size")
+    parser.add_argument(
+        "-e", "--epochs", type=int, default=100, help="Number of epochs to train for"
+    )
+    parser.add_argument(
+        "-l",
+        "--learning-rate",
+        type=float,
+        default=0.0001,
+        help="Initial SGD learning rate",
+    )
+    parser.add_argument(
+        "-m", "--momentum", type=float, default=0.9, help="SGD momentum"
+    )
+    parser.add_argument(
+        "-c",
+        "--checkpoint",
+        help="Path to checkpointed weights to continue training from",
+    )
+    parser.add_argument(
+        "-s",
+        "--save",
+        help="Path to save checkpoints",
+        default="weights"
+    )
+    return parser
+
 
 def main():
+    parser = make_parser()
+    args = parser.parse_args()
 
     # hyper parameters
-    epochs = 100
-    batch_size = 8
+    epochs = args.epochs
+    batch_size = args.batch_size
     alpha = 0.6
     w = 0.4
 
     print("Loading all detected objects in dataset...")
-
-    train_path = os.path.abspath(os.path.dirname(__file__)) + '/Kitti/training'
+    train_path = (
+        args.data
+    )
     dataset = Dataset(train_path)
-
-    params = {'batch_size': batch_size,
-              'shuffle': True,
-              'num_workers': 6}
+    ## As well as batch_size and num_workers
+    params = {"batch_size": batch_size, "shuffle": True, "num_workers": 6}
 
     generator = data.DataLoader(dataset, **params)
 
     my_vgg = vgg.vgg19_bn(pretrained=True)
     model = Model(features=my_vgg.features).cuda()
-    opt_SGD = torch.optim.SGD(model.parameters(), lr=0.0001, momentum=0.9)
+    opt_SGD = torch.optim.SGD(
+        model.parameters(), lr=args.learning_rate, momentum=args.momentum
+    )
     conf_loss_func = nn.CrossEntropyLoss().cuda()
     dim_loss_func = nn.MSELoss().cuda()
     orient_loss_func = OrientationLoss
 
-    # load any previous weights
-    model_path = os.path.abspath(os.path.dirname(__file__)) + '/weights/'
-    latest_model = None
     first_epoch = 0
-    if not os.path.isdir(model_path):
-        os.mkdir(model_path)
-    else:
-        try:
-            latest_model = [x for x in sorted(os.listdir(model_path)) if x.endswith('.pkl')][-1]
-        except:
-            pass
-
-
-    if latest_model is not None:
-        checkpoint = torch.load(model_path + latest_model)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        opt_SGD.load_state_dict(checkpoint['optimizer_state_dict'])
-        first_epoch = checkpoint['epoch']
-        loss = checkpoint['loss']
-
-        print('Found previous checkpoint: %s at epoch %s'%(latest_model, first_epoch))
-        print('Resuming training....')
-
-
+    if args.checkpoint is not None:
+        checkpoint = torch.load(args.checkpoint)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        opt_SGD.load_state_dict(checkpoint["optimizer_state_dict"])
+        first_epoch = checkpoint["epoch"]
+        loss = checkpoint["loss"]
+        print(
+            "Found previous checkpoint: %s at epoch %s" % (args.checkpoint, first_epoch)
+        )
+        print("Resuming training....")
 
     total_num_batches = int(len(dataset) / batch_size)
 
-    for epoch in range(first_epoch+1, epochs+1):
+    for epoch in range(first_epoch + 1, epochs + 1):
         curr_batch = 0
         passes = 0
         for local_batch, local_labels in generator:
+            truth_orient = local_labels["Orientation"].float().cuda()
+            truth_conf = local_labels["Confidence"].long().cuda()
+            truth_dim = local_labels["Dimensions"].float().cuda()
 
-            truth_orient = local_labels['Orientation'].float().cuda()
-            truth_conf = local_labels['Confidence'].long().cuda()
-            truth_dim = local_labels['Dimensions'].float().cuda()
-
-            local_batch=local_batch.float().cuda()
+            local_batch = local_batch.float().cuda()
             [orient, conf, dim] = model(local_batch)
 
             orient_loss = orient_loss_func(orient, truth_orient, truth_conf)
@@ -89,9 +116,11 @@ def main():
             loss.backward()
             opt_SGD.step()
 
-
             if passes % 10 == 0:
-                print("--- epoch %s | batch %s/%s --- [loss: %s]" %(epoch, curr_batch, total_num_batches, loss.item()))
+                print(
+                    "--- epoch %s | batch %s/%s --- [loss: %s]"
+                    % (epoch, curr_batch, total_num_batches, loss.item())
+                )
                 passes = 0
 
             passes += 1
@@ -99,17 +128,21 @@ def main():
 
         # save after every 10 epochs
         if epoch % 10 == 0:
-            name = model_path + 'epoch_%s.pkl' % epoch
+            name = os.path.join(args.save, f"epoch_{epoch}.pkl")
             print("====================")
-            print ("Done with epoch %s!" % epoch)
-            print ("Saving weights as %s ..." % name)
-            torch.save({
-                    'epoch': epoch,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': opt_SGD.state_dict(),
-                    'loss': loss
-                    }, name)
+            print("Done with epoch %s!" % epoch)
+            print("Saving weights as %s ..." % name)
+            torch.save(
+                {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": opt_SGD.state_dict(),
+                    "loss": loss,
+                },
+                name,
+            )
             print("====================")
 
-if __name__=='__main__':
+
+if __name__ == "__main__":
     main()
