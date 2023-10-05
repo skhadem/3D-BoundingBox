@@ -100,7 +100,7 @@ def main():
     # params = {"batch_size": batch_size, "shuffle": True, "num_workers": 10}
     train_loader = data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=10)
     test_loader = data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=10)
-    my_vgg = vgg.vgg19_bn(pretrained=True)
+    my_vgg = vgg.vgg19_bn(weights=vgg.VGG19_BN_Weights.IMAGENET1K_V1)
     model = Model(features=my_vgg.features).cuda()
     opt_SGD = torch.optim.SGD(
         model.parameters(), lr=args.learning_rate, momentum=args.momentum
