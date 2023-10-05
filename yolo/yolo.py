@@ -31,7 +31,7 @@ class cv_Yolo:
         (H,W) = image.shape[:2]
 
         ln = self.net.getLayerNames()
-        ln = [ln[i[0] - 1] for i in self.net.getUnconnectedOutLayers()]
+        ln = [ln[i - 1] for i in self.net.getUnconnectedOutLayers()]
 
         # prepare input
         blob = cv2.dnn.blobFromImage(image, 1 / 255.0, (416, 416), swapRB=True, crop=False)
