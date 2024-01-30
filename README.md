@@ -76,4 +76,5 @@ There are 2 key assumptions made:
 - Some type of Pose visualization (ROS?)
 
 ## Credit
-I originally started from a fork of this [repo](https://github.com/fuenwang/3D-BoundingBox), and some of the original code still exists in the training script.
+1. I originally started from a fork of this [repo](https://github.com/fuenwang/3D-BoundingBox), and some of the original code still exists in the training script.
+2. 2D-3D geometric [conversion](https://ywpkwon.github.io/pdf/bbox3d-study.pdf).
